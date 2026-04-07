@@ -248,7 +248,7 @@ impl eframe::App for GrafcetEditor {
 
         // ── Canvas principal ───────────────────────────────────────────────
         egui::CentralPanel::default()
-            .frame(egui::Frame::canvas(ui.style()))
+            .frame(egui::Frame::default().fill(egui::Color32::from_rgb(30, 32, 36)))
             .show_inside(ui, |ui| {
                 let resp = ui.allocate_rect(ui.available_rect_before_wrap(), egui::Sense::click_and_drag());
                 let painter = ui.painter_at(resp.rect);
@@ -284,7 +284,9 @@ impl eframe::App for GrafcetEditor {
                     self.offset += resp.drag_delta();
                 }
 
-                if resp.drag_started_by(egui::PointerButton::Primary) {
+                // Détection appui primaire (fonctionne pour clic simple ET clic+drag)
+                let just_pressed = ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary));
+                if just_pressed && resp.contains_pointer() {
                     if let Some(p) = pointer {
                         // Coordonnées canvas
                         let cv = Pos2::new(
@@ -325,11 +327,14 @@ impl eframe::App for GrafcetEditor {
                                 _ => {}
                             }
                         } else {
-                            // Clic sur zone vide
+                            // Appui sur zone vide
                             match self.tool {
                                 Tool::AddStep => {
                                     let id = self.grafcet.add_step([cv.x, cv.y]);
                                     self.selected_step = Some(id);
+                                    // Démarre le drag immédiatement : glisser pour repositionner
+                                    self.dragging_step = Some(id);
+                                    self.drag_offset = Vec2::ZERO;
                                     self.status_msg = format!("Étape E{id} créée");
                                 }
                                 Tool::Select => {
@@ -398,7 +403,7 @@ impl GrafcetEditor {
     /// Dessine la grille de fond du canvas.
     fn draw_grid(&self, painter: &egui::Painter, rect: egui::Rect) {
         let grid_sz = 20.0 * self.zoom;
-        let color = egui::Color32::from_gray(230);
+        let color = egui::Color32::from_gray(55);
         let stroke = egui::Stroke::new(0.5, color);
 
         let x0 = rect.min.x + (self.offset.x % grid_sz + grid_sz) % grid_sz;

@@ -8,14 +8,14 @@ pub const STEP_H: f32 = 60.0;
 pub const TRANS_W: f32 = 60.0;
 pub const TRANS_H: f32 = 4.0;
 
-const C_STEP_NORMAL: Color32 = Color32::from_rgb(214, 234, 248);
-const C_STEP_INITIAL: Color32 = Color32::from_rgb(169, 204, 227);
-const C_STEP_ACTIVE: Color32 = Color32::from_rgb(130, 224, 170);
-const C_BORDER: Color32 = Color32::from_rgb(26, 82, 118);
-const C_TRANS: Color32 = Color32::from_rgb(28, 40, 51);
-const C_LINK: Color32 = Color32::from_rgb(36, 113, 163);
-const C_COND: Color32 = Color32::from_rgb(118, 68, 138);
-const C_ARROW: Color32 = Color32::from_rgb(36, 113, 163);
+const C_STEP_NORMAL: Color32 = Color32::from_rgb(55, 65, 85);
+const C_STEP_INITIAL: Color32 = Color32::from_rgb(40, 80, 120);
+const C_STEP_ACTIVE: Color32 = Color32::from_rgb(40, 130, 80);
+const C_BORDER: Color32 = Color32::from_rgb(160, 200, 240);
+const C_TRANS: Color32 = Color32::from_rgb(220, 220, 220);
+const C_LINK: Color32 = Color32::from_rgb(200, 200, 200);
+const C_COND: Color32 = Color32::from_rgb(200, 160, 230);
+const C_ARROW: Color32 = Color32::from_rgb(200, 200, 200);
 
 /// Renvoie le rectangle d'une étape dans les coordonnées canvas (pan + zoom).
 pub fn step_rect(pos: [f32; 2], offset: Vec2, zoom: f32) -> Rect {
@@ -40,44 +40,46 @@ pub fn draw_links(painter: &Painter, grafcet: &Grafcet, offset: Vec2, zoom: f32)
         let src = src.unwrap();
         let dst = dst.unwrap();
 
-        // Point de départ : bas de l'étape source
+        // Bas de l'étape source, haut de l'étape destination (coordonnées écran)
         let sx = src.pos[0] * zoom + offset.x;
         let sy_bot = src.pos[1] * zoom + offset.y + STEP_H * zoom / 2.0;
-
-        // Point d'arrivée : haut de l'étape destination
         let dx = dst.pos[0] * zoom + offset.x;
         let dy_top = dst.pos[1] * zoom + offset.y - STEP_H * zoom / 2.0;
 
-        // Milieu vertical : position Y de la barre de transition
-        let mid_y = (sy_bot + dy_top) / 2.0;
+        // Y de la barre de transition : entre source et destination
+        let bar_y = (sy_bot + dy_top) / 2.0;
 
-        // Ligne verticale étape source → barre
-        painter.line_segment([Pos2::new(sx, sy_bot), Pos2::new(sx, mid_y)], stroke);
+        // 1. Ligne verticale : bas source → barre (sur l'axe X source)
+        painter.line_segment([Pos2::new(sx, sy_bot), Pos2::new(sx, bar_y)], stroke);
 
-        // Barre de transition horizontale
+        // 2. Barre de transition centrée sur l'axe X source
         let tw = TRANS_W * zoom / 2.0;
-        let tx = sx; // centré sur l'étape source (peut différer si src/dst décalés)
         painter.rect_filled(
             Rect::from_min_max(
-                Pos2::new(tx - tw, mid_y - TRANS_H * zoom / 2.0),
-                Pos2::new(tx + tw, mid_y + TRANS_H * zoom / 2.0),
+                Pos2::new(sx - tw, bar_y - TRANS_H * zoom / 2.0),
+                Pos2::new(sx + tw, bar_y + TRANS_H * zoom / 2.0),
             ),
             CornerRadius::ZERO,
             C_TRANS,
         );
 
-        // Condition de transition
+        // 3. Condition de transition (à droite de la barre)
         let font = FontId::proportional(11.0 * zoom);
         painter.text(
-            Pos2::new(tx + tw + 6.0 * zoom, mid_y),
+            Pos2::new(sx + tw + 6.0 * zoom, bar_y),
             egui::Align2::LEFT_CENTER,
             &t.condition,
             font,
             C_COND,
         );
 
-        // Ligne verticale barre → étape destination (avec flèche)
-        painter.line_segment([Pos2::new(dx, mid_y), Pos2::new(dx, dy_top)], stroke);
+        // 4. Ligne horizontale barre → axe X destination (si décalage)
+        if (sx - dx).abs() > 2.0 {
+            painter.line_segment([Pos2::new(sx, bar_y), Pos2::new(dx, bar_y)], stroke);
+        }
+
+        // 5. Ligne verticale : niveau barre → haut destination (sur l'axe X destination)
+        painter.line_segment([Pos2::new(dx, bar_y), Pos2::new(dx, dy_top)], stroke);
         draw_arrow(painter, Pos2::new(dx, dy_top), arrow_stroke, zoom);
     }
 }
@@ -118,7 +120,7 @@ pub fn draw_steps(painter: &Painter, grafcet: &Grafcet, offset: Vec2, zoom: f32)
             egui::Align2::LEFT_CENTER,
             format!("{}", step.id),
             font_num,
-            C_BORDER,
+            Color32::from_rgb(180, 220, 255),
         );
 
         // Label centré
@@ -128,7 +130,7 @@ pub fn draw_steps(painter: &Painter, grafcet: &Grafcet, offset: Vec2, zoom: f32)
             egui::Align2::CENTER_CENTER,
             &step.label,
             font_lbl,
-            Color32::from_rgb(28, 40, 51),
+            Color32::from_rgb(230, 230, 230),
         );
 
         // Actions (petite police, à gauche sous le label)
@@ -142,7 +144,7 @@ pub fn draw_steps(painter: &Painter, grafcet: &Grafcet, offset: Vec2, zoom: f32)
                 egui::Align2::LEFT_CENTER,
                 action,
                 font_act.clone(),
-                Color32::from_rgb(30, 132, 73),
+                Color32::from_rgb(100, 220, 140),
             );
         }
     }

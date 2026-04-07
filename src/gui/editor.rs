@@ -1,7 +1,7 @@
 use egui::{Key, Modifiers, Pos2, Vec2};
 
 use crate::grafcet::{Grafcet, StepKind};
-use crate::gui::canvas::{draw_links, draw_steps, STEP_H, STEP_W};
+use crate::gui::canvas::{draw_links, draw_step_ghost, draw_steps, draw_transitions, hit_transition, STEP_H, STEP_W};
 use crate::persistence::{load_json, save_json};
 
 /// Outil actif dans l'éditeur
@@ -29,9 +29,10 @@ pub struct GrafcetEditor {
     zoom: f32,
     last_drag_pos: Option<Pos2>,
 
-    // Drag d'une étape
+    // Drag d'une étape ou d'une transition
     dragging_step: Option<u32>,
     drag_offset: Vec2,
+    dragging_trans: Option<u32>,
 
     // Connexion en cours (AddTransition)
     conn_from: Option<u32>,
@@ -62,6 +63,7 @@ impl Default for GrafcetEditor {
             last_drag_pos: None,
             dragging_step: None,
             drag_offset: Vec2::ZERO,
+            dragging_trans: None,
             conn_from: None,
             selected_step: None,
             status_msg: "Bienvenue dans l'éditeur GRAFCET".to_string(),
@@ -141,6 +143,17 @@ impl eframe::App for GrafcetEditor {
                 }
                 if ui.button("Centrer").clicked() {
                     self.offset = Vec2::ZERO;
+                }
+                if ui.button("🗑 Vider").on_hover_text("Vide le canvas (supprime toutes les étapes et transitions)").clicked() {
+                    self.grafcet.steps.clear();
+                    self.grafcet.transitions.clear();
+                    self.grafcet.next_step_id = 0;
+                    self.grafcet.next_trans_id = 0;
+                    self.selected_step = None;
+                    self.dragging_step = None;
+                    self.dragging_trans = None;
+                    self.conn_from = None;
+                    self.status_msg = "Canvas vidé".to_string();
                 }
 
                 // Raccourcis clavier
@@ -256,9 +269,41 @@ impl eframe::App for GrafcetEditor {
                 // Grille de fond
                 self.draw_grid(&painter, resp.rect);
 
-                // Dessin des liaisons puis des étapes
+                // Calcul du survol de transition pour feedback visuel
+                let hover_trans: Option<u32> = if self.tool == Tool::Select {
+                    ctx.pointer_hover_pos()
+                        .filter(|&p| resp.rect.contains(p))
+                        .and_then(|p| {
+                            let cv = egui::Pos2::new(
+                                (p.x - resp.rect.min.x - self.offset.x) / self.zoom,
+                                (p.y - resp.rect.min.y - self.offset.y) / self.zoom,
+                            );
+                            hit_transition(cv, &self.grafcet)
+                        })
+                } else {
+                    None
+                };
+                if hover_trans.is_some() {
+                    ctx.set_cursor_icon(egui::CursorIcon::ResizeVertical);
+                }
+
+                // Passe 1 : corps des étapes (fond)
+                draw_steps(&painter, &self.grafcet, self.offset, self.zoom, self.dragging_step);
+                // Passe 2 : segments de liaison (par-dessus les mèches d'étapes)
                 draw_links(&painter, &self.grafcet, self.offset, self.zoom);
-                draw_steps(&painter, &self.grafcet, self.offset, self.zoom);
+                // Passe 3 : barres de transition (tout au-dessus)
+                draw_transitions(&painter, &self.grafcet, self.offset, self.zoom, self.dragging_trans, hover_trans);
+
+                // Ghost step : preview de placement si outil AddStep actif
+                if self.tool == Tool::AddStep {
+                    if let Some(mouse) = ctx.pointer_interact_pos() {
+                        if resp.rect.contains(mouse) {
+                            let cv_x = (mouse.x - resp.rect.min.x - self.offset.x) / self.zoom;
+                            let cv_y = (mouse.y - resp.rect.min.y - self.offset.y) / self.zoom;
+                            draw_step_ghost(&painter, [cv_x, cv_y], self.offset, self.zoom);
+                        }
+                    }
+                }
 
                 // Ligne de connexion en cours
                 if let Some(from_id) = self.conn_from {
@@ -279,7 +324,7 @@ impl eframe::App for GrafcetEditor {
                 let pointer = ctx.pointer_interact_pos();
                 let origin = resp.rect.min;
 
-                // Scroll de pan (bouton central ou espace+drag)
+                // Scroll de pan (bouton central)
                 if resp.dragged_by(egui::PointerButton::Middle) {
                     self.offset += resp.drag_delta();
                 }
@@ -288,11 +333,25 @@ impl eframe::App for GrafcetEditor {
                 let just_pressed = ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary));
                 if just_pressed && resp.contains_pointer() {
                     if let Some(p) = pointer {
-                        // Coordonnées canvas
+                        // Coordonnées canvas (logique) — même espace que step.pos
                         let cv = Pos2::new(
                             (p.x - origin.x - self.offset.x) / self.zoom,
                             (p.y - origin.y - self.offset.y) / self.zoom,
                         );
+
+                        // En mode Select : priorité aux transitions (zone de clic petite)
+                        let trans_grabbed = if self.tool == Tool::Select {
+                            if let Some(tid) = hit_transition(cv, &self.grafcet) {
+                                self.dragging_trans = Some(tid);
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        if !trans_grabbed {
                         if let Some(id) = self.hit_step(cv) {
                             match self.tool {
                                 Tool::Select => {
@@ -344,12 +403,25 @@ impl eframe::App for GrafcetEditor {
                                 _ => {}
                             }
                         }
+                        } // end !trans_grabbed
                     }
                 }
 
-                // Drag d'une étape
-                if resp.dragged_by(egui::PointerButton::Primary) {
-                    if let Some(id) = self.dragging_step {
+                // Drag d'une étape ou d'une transition
+                // On utilise pointer.delta() (raw input) pour la transition — plus fiable
+                // que resp.dragged_by() qui peut rater si le claim n'est pas tenu.
+                let primary_down = ctx.input(|i| i.pointer.button_down(egui::PointerButton::Primary));
+                let primary_released = ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary));
+                let ptr_delta = ctx.input(|i| i.pointer.delta());
+
+                if primary_down {
+                    if let Some(tid) = self.dragging_trans {
+                        if let Some(t) = self.grafcet.transition_mut(tid) {
+                            // Drag 2D : X et Y
+                            t.pos[0] += ptr_delta.x / self.zoom;
+                            t.pos[1] += ptr_delta.y / self.zoom;
+                        }
+                    } else if let Some(id) = self.dragging_step {
                         if let Some(p) = pointer {
                             let cv = Pos2::new(
                                 (p.x - origin.x - self.offset.x) / self.zoom,
@@ -362,11 +434,14 @@ impl eframe::App for GrafcetEditor {
                                 ];
                             }
                         }
+                    } else if resp.dragged_by(egui::PointerButton::Middle) {
+                        self.offset += resp.drag_delta();
                     }
                 }
 
-                if resp.drag_stopped() {
+                if primary_released {
                     self.dragging_step = None;
+                    self.dragging_trans = None;
                 }
 
                 // Zoom molette

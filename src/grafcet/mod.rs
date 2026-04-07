@@ -12,9 +12,9 @@ pub struct Grafcet {
     pub steps: Vec<Step>,
     pub transitions: Vec<Transition>,
     #[serde(default)]
-    next_step_id: u32,
+    pub next_step_id: u32,
     #[serde(default)]
-    next_trans_id: u32,
+    pub next_trans_id: u32,
 }
 
 impl Grafcet {
@@ -50,8 +50,21 @@ impl Grafcet {
     pub fn add_transition(&mut self, from_step: u32, to_step: u32) -> u32 {
         let id = self.next_trans_id;
         self.next_trans_id += 1;
-        self.transitions.push(Transition::new(id, from_step, to_step));
+        // Divergence en OU : si d'autres transitions partent déjà de cette étape,
+        // on décale en X de 100 px par transition existante.
+        let siblings = self.transitions.iter().filter(|t| t.from_step == from_step).count();
+        let x_off = siblings as f32 * 100.0;
+        let pos = if let Some(src) = self.step(from_step) {
+            [src.pos[0] + x_off, src.pos[1] + 95.0]
+        } else {
+            [200.0 + x_off, 200.0]
+        };
+        self.transitions.push(Transition::new(id, from_step, to_step, pos));
         id
+    }
+
+    pub fn transition(&self, id: u32) -> Option<&Transition> {
+        self.transitions.iter().find(|t| t.id == id)
     }
 
     pub fn remove_transition(&mut self, id: u32) {

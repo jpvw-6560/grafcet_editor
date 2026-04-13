@@ -1,0 +1,419 @@
+{
+  "version": "1.0",
+  "description": "Questionnaire GEMMA - arbre de décision pour générer les états et transitions",
+  "questions": [
+    {
+      "id": 1,
+      "titre": "Cycle automatique",
+      "question": "La machine possède-t-elle un cycle automatique ?",
+      "conditions": [
+        "Depart_cycle",
+        "Cycle_auto"
+      ],
+      "etats_si_oui": [
+        "A1",
+        "F1"
+      ],
+      "etats_si_non": [
+        "F4",
+        "F6"
+      ],
+      "transitions_si_oui": [
+        {
+          "de": "A1",
+          "vers": "F1",
+          "condition": "Depart_cycle"
+        }
+      ],
+      "transitions_si_non": [],
+      "reponse": true
+    },
+    {
+      "id": 2,
+      "titre": "Initialisation avant production",
+      "question": "La machine doit-elle être initialisée avant production ?",
+      "conditions": [
+        "Reset_machine",
+        "Initialisation",
+        "Origine_axes"
+      ],
+      "etats_si_oui": [
+        "A6",
+        "A1"
+      ],
+      "etats_si_non": [],
+      "transitions_si_oui": [
+        {
+          "de": "A6",
+          "vers": "A1",
+          "condition": "Init_OK"
+        }
+      ],
+      "transitions_si_non": [],
+      "reponse": true
+    },
+    {
+      "id": 3,
+      "titre": "Arrêt en fin de cycle",
+      "question": "La production doit-elle pouvoir s'arrêter en fin de cycle ?",
+      "conditions": [
+        "Stop"
+      ],
+      "etats_si_oui": [
+        "A2"
+      ],
+      "etats_si_non": [],
+      "transitions_si_oui": [
+        {
+          "de": "F1",
+          "vers": "A2",
+          "condition": "Stop"
+        },
+        {
+          "de": "A2",
+          "vers": "A1",
+          "condition": "Fin_cycle"
+        }
+      ],
+      "transitions_si_non": [],
+      "reponse": true
+    },
+    {
+      "id": 4,
+      "titre": "Arrêt immédiat",
+      "question": "La machine doit-elle pouvoir s'arrêter immédiatement (dans un état déterminé) ?",
+      "conditions": [
+        "Stop_immediat"
+      ],
+      "etats_si_oui": [
+        "A3",
+        "A4"
+      ],
+      "etats_si_non": [],
+      "transitions_si_oui": [
+        {
+          "de": "F1",
+          "vers": "A3",
+          "condition": "Stop_immediat"
+        },
+        {
+          "de": "A3",
+          "vers": "A4",
+          "condition": "Arret_obtenu"
+        },
+        {
+          "de": "A4",
+          "vers": "F1",
+          "condition": "Remise_en_marche"
+        },
+        {
+          "de": "A4",
+          "vers": "A6",
+          "condition": "Init_position"
+        }
+      ],
+      "transitions_si_non": [],
+      "reponse": true
+    },
+    {
+      "id": 5,
+      "titre": "Sécurités / Défauts machine",
+      "question": "Existe-t-il des défauts ou sécurités à gérer (AU, thermique, porte ouverte…) ?",
+      "conditions": [
+        "AU",
+        "Thermique_moteur",
+        "Défaut_variateur",
+        "Porte_ouverte",
+        "Pression_air"
+      ],
+      "etats_si_oui": [
+        "D1",
+        "D2",
+        "A5"
+      ],
+      "etats_si_non": [],
+      "transitions_si_oui": [
+        {
+          "de": "F1",
+          "vers": "D1",
+          "condition": "Defaut"
+        },
+        {
+          "de": "F1",
+          "vers": "D2",
+          "condition": "Defaut_direct"
+        },
+        {
+          "de": "D1",
+          "vers": "D2",
+          "condition": "EU_relachee"
+        },
+        {
+          "de": "D1",
+          "vers": "A5",
+          "condition": "Reset_direct"
+        },
+        {
+          "de": "D2",
+          "vers": "A5",
+          "condition": "Acquit_defaut"
+        }
+      ],
+      "transitions_si_non": [],
+      "reponse": true
+    },
+    {
+      "id": 6,
+      "titre": "Réinitialisation après défaut",
+      "question": "La machine doit-elle être réinitialisée après un défaut avant de repartir ?",
+      "conditions": [
+        "Reset",
+        "Acquit_defaut"
+      ],
+      "etats_si_oui": [
+        "A5",
+        "A6"
+      ],
+      "etats_si_non": [],
+      "transitions_si_oui": [
+        {
+          "de": "A5",
+          "vers": "A6",
+          "condition": "Reset_machine"
+        },
+        {
+          "de": "A6",
+          "vers": "A1",
+          "condition": "Init_OK"
+        }
+      ],
+      "transitions_si_non": [],
+      "reponse": true
+    },
+    {
+      "id": 7,
+      "titre": "Positions particulières",
+      "question": "La machine doit-elle être mise dans une position spécifique (maintenance, réglage, accès opérateur) ?",
+      "conditions": [
+        "Mode_reglage",
+        "Position_service",
+        "Maintenance"
+      ],
+      "etats_si_oui": [
+        "A7"
+      ],
+      "etats_si_non": [],
+      "transitions_si_oui": [
+        {
+          "de": "A5",
+          "vers": "A7",
+          "condition": "Mode_reglage"
+        },
+        {
+          "de": "A7",
+          "vers": "A4",
+          "condition": "Arret_obtenu"
+        },
+        {
+          "de": "A7",
+          "vers": "A6",
+          "condition": "Quitter_reglage"
+        }
+      ],
+      "transitions_si_non": [],
+      "reponse": true
+    },
+    {
+      "id": 8,
+      "titre": "Mode Test",
+      "question": "Existe-t-il un mode test de la machine (marches de test) ?",
+      "conditions": [
+        "Mode_test"
+      ],
+      "etats_si_oui": [
+        "F6"
+      ],
+      "etats_si_non": [],
+      "transitions_si_oui": [
+        {
+          "de": "F1",
+          "vers": "F6",
+          "condition": "Mode_test"
+        },
+        {
+          "de": "F6",
+          "vers": "F1",
+          "condition": "Fin_test"
+        },
+        {
+          "de": "F6",
+          "vers": "D1",
+          "condition": "AU"
+        }
+      ],
+      "transitions_si_non": [],
+      "reponse": true
+    },
+    {
+      "id": 9,
+      "titre": "Vérification libre",
+      "question": "Existe-t-il un mode de vérification dans le désordre (sans séquence imposée) ?",
+      "conditions": [
+        "Mode_verification_libre"
+      ],
+      "etats_si_oui": [
+        "F4"
+      ],
+      "etats_si_non": [],
+      "transitions_si_oui": [
+        {
+          "de": "A1",
+          "vers": "F4",
+          "condition": "Mode_verif_libre"
+        },
+        {
+          "de": "F1",
+          "vers": "F4",
+          "condition": "Mode_verif_libre"
+        },
+        {
+          "de": "F4",
+          "vers": "A6",
+          "condition": "CI"
+        }
+      ],
+      "transitions_si_non": [],
+      "reponse": true
+    },
+    {
+      "id": 10,
+      "titre": "Vérification séquentielle",
+      "question": "Existe-t-il un mode de vérification dans l'ordre (séquentielle) ?",
+      "conditions": [
+        "Mode_verification_seq"
+      ],
+      "etats_si_oui": [
+        "F5"
+      ],
+      "etats_si_non": [],
+      "transitions_si_oui": [
+        {
+          "de": "A1",
+          "vers": "F5",
+          "condition": "Mode_verif_seq"
+        },
+        {
+          "de": "F1",
+          "vers": "F5",
+          "condition": "Mode_verif_seq"
+        },
+        {
+          "de": "F5",
+          "vers": "F1",
+          "condition": "Fin_verif"
+        },
+        {
+          "de": "F5",
+          "vers": "F4",
+          "condition": "Passage_verif_libre"
+        }
+      ],
+      "transitions_si_non": [],
+      "reponse": true
+    },
+    {
+      "id": 11,
+      "titre": "Préparation machine",
+      "question": "Existe-t-il des marches de préparation avant production (chauffe, purge…) ?",
+      "conditions": [
+        "Mode_preparation"
+      ],
+      "etats_si_oui": [
+        "F2"
+      ],
+      "etats_si_non": [],
+      "transitions_si_oui": [
+        {
+          "de": "A1",
+          "vers": "F2",
+          "condition": "Mode_preparation"
+        },
+        {
+          "de": "F2",
+          "vers": "F1",
+          "condition": "Préparation_ok"
+        }
+      ],
+      "transitions_si_non": [],
+      "reponse": true
+    },
+    {
+      "id": 12,
+      "titre": "Clôture de cycle",
+      "question": "Existe-t-il des marches de clôture (fin de production, nettoyage final…) ?",
+      "conditions": [
+        "Mode_cloture"
+      ],
+      "etats_si_oui": [
+        "F3"
+      ],
+      "etats_si_non": [],
+      "transitions_si_oui": [
+        {
+          "de": "F1",
+          "vers": "F3",
+          "condition": "Mode_cloture"
+        },
+        {
+          "de": "F3",
+          "vers": "A1",
+          "condition": "Clôture_ok"
+        }
+      ],
+      "transitions_si_non": [],
+      "reponse": true
+    },
+    {
+      "id": 13,
+      "titre": "Production malgré défaut",
+      "question": "La production peut-elle continuer malgré certains défauts mineurs (mode dégradé) ?",
+      "conditions": [
+        "Defaut_mineur",
+        "Mode_degrade"
+      ],
+      "etats_si_oui": [
+        "D3"
+      ],
+      "etats_si_non": [],
+      "transitions_si_oui": [
+        {
+          "de": "F1",
+          "vers": "D3",
+          "condition": "Defaut_mineur"
+        },
+        {
+          "de": "D3",
+          "vers": "F1",
+          "condition": "Defaut_resolu"
+        },
+        {
+          "de": "D3",
+          "vers": "A2",
+          "condition": "Stop"
+        },
+        {
+          "de": "D3",
+          "vers": "A3",
+          "condition": "Stop_immediat"
+        },
+        {
+          "de": "D3",
+          "vers": "D2",
+          "condition": "Defaut_majeur"
+        }
+      ],
+      "transitions_si_non": [],
+      "reponse": true
+    }
+  ]
+}

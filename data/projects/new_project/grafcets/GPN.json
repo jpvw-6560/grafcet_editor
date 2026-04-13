@@ -1,0 +1,18 @@
+{
+  "steps": [
+    {
+      "id": 0,
+      "label": "E0",
+      "actions": [],
+      "kind": "Initial",
+      "pos": [
+        400.0,
+        100.0
+      ],
+      "active": false
+    }
+  ],
+  "transitions": [],
+  "next_step_id": 1,
+  "next_trans_id": 0
+}

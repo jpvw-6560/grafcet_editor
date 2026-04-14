@@ -114,13 +114,20 @@ impl ProjectPage {
         section_title(ui, "CHARGER UN PROJET");
         ui.add_space(6.0);
 
-        let load_btn = styled_button(ui, "📂  Ouvrir un fichier…", egui::Color32::from_rgb(39, 60, 78));
+        let load_btn = styled_button(ui, "📂  Ouvrir un projet…", egui::Color32::from_rgb(39, 60, 78));
         if load_btn.clicked() {
-            if let Some(path) = rfd::FileDialog::new()
-                .add_filter("Projet GEMMA", &["json"])
-                .pick_file()
-            {
-                action = Some(ProjectAction::Load(path));
+            // Répertoire de départ : data/projets/ en absolu depuis le cwd
+            let projets_dir = std::env::current_dir()
+                .unwrap_or_default()
+                .join("data")
+                .join("projets");
+            let mut dlg = rfd::FileDialog::new()
+                .set_title("Choisir le dossier du projet");
+            if projets_dir.exists() {
+                dlg = dlg.set_directory(&projets_dir);
+            }
+            if let Some(dir) = dlg.pick_folder() {
+                action = Some(ProjectAction::LoadDir(dir));
             }
         }
 

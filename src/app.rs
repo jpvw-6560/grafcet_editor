@@ -303,11 +303,15 @@ impl App {
                         save_last_project_path(&dir.join("project.json"));
                         if !p.gemma.states.is_empty() {
                             self.gemma_page.pending_fit = true;
+                            self.status = format!("Projet « {name} » chargé");
+                        } else {
+                            self.status = format!(
+                                "Projet « {name} » chargé — GEMMA vide, utilisez le Questionnaire pour générer"
+                            );
                         }
                         self.project = Some(p);
                         self.current_path = Some(dir);
                         self.grafcets_page.reset();
-                        self.status = format!("Projet « {name} » chargé");
                         self.section = Section::Gemma;
                     }
                     Err(e) => self.status = format!("Erreur chargement : {e}"),

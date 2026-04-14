@@ -79,6 +79,8 @@ pub struct GemmaPage {
     dragging_ep: Option<DragEndpoint>,
     // Déplacement d'un segment intermédiaire (clic sur handle carré en mode Select)
     dragging_seg: Option<DragSegment>,
+    // Dialogue de confirmation de réinitialisation
+    confirm_reset: bool,
 }
 
 impl Default for GemmaPage {
@@ -98,6 +100,7 @@ impl Default for GemmaPage {
             needs_save:   false,
             pending_from: None,
             ctx_menu_trans: None,
+            confirm_reset: false,
             dragging_ep: None,
             dragging_seg: None,
         }
@@ -864,17 +867,55 @@ impl GemmaPage {
                     ));
                 }
     
-                // Bouton Réinitialiser
+                // Bouton Réinitialiser (avec confirmation)
                 let reset_btn = egui::Button::new(
                     egui::RichText::new("↺ Réinitialiser").size(11.0)
                 ).fill(Color32::from_rgb(60, 55, 45));
                 if ui.add(reset_btn).clicked() {
-                    self.questionnaire.reset_answers();
-                    gemma.states.clear();
-                    gemma.transitions.clear();
-                    gemma.next_trans_id = 0;
-                    self.needs_save = true;
-                    status_out = Some("Questionnaire et GEMMA réinitialisés".to_string());
+                    self.confirm_reset = true;
+                }
+
+                // Dialogue de confirmation
+                if self.confirm_reset {
+                    egui::Window::new("⚠ Confirmation")
+                        .collapsible(false)
+                        .resizable(false)
+                        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+                        .show(ui.ctx(), |ui| {
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new("Effacer tous les états et transitions du GEMMA ?")
+                                    .size(12.0)
+                                    .color(Color32::from_rgb(220, 180, 80)),
+                            );
+                            ui.label(
+                                egui::RichText::new("Cette action est irréversible.")
+                                    .size(11.0)
+                                    .color(Color32::from_rgb(180, 100, 100)),
+                            );
+                            ui.add_space(8.0);
+                            ui.horizontal(|ui| {
+                                let oui = egui::Button::new(
+                                    egui::RichText::new("Oui, effacer").size(11.0)
+                                ).fill(Color32::from_rgb(160, 40, 40));
+                                if ui.add(oui).clicked() {
+                                    self.questionnaire.reset_answers();
+                                    gemma.states.clear();
+                                    gemma.transitions.clear();
+                                    gemma.next_trans_id = 0;
+                                    // Pas d'auto-save : l'utilisateur doit sauvegarder
+                                    // explicitement (Ctrl+S) après un reset destructif.
+                                    self.confirm_reset = false;
+                                    status_out = Some("GEMMA réinitialisé — sauvegardez avec Ctrl+S si souhaité".to_string());
+                                }
+                                let non = egui::Button::new(
+                                    egui::RichText::new("Annuler").size(11.0)
+                                ).fill(Color32::from_rgb(45, 55, 65));
+                                if ui.add(non).clicked() {
+                                    self.confirm_reset = false;
+                                }
+                            });
+                        });
                 }
             });
     

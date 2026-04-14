@@ -1,0 +1,398 @@
+{
+  "states": [
+    {
+      "id": "A1",
+      "state_type": "Command",
+      "pos": [
+        278.0,
+        80.0
+      ],
+      "w": 115.0,
+      "h": 40.0,
+      "description": ""
+    },
+    {
+      "id": "F1",
+      "state_type": "Production",
+      "pos": [
+        486.0,
+        334.0
+      ],
+      "w": 155.0,
+      "h": 165.0,
+      "description": ""
+    },
+    {
+      "id": "A6",
+      "state_type": "Command",
+      "pos": [
+        122.0,
+        80.0
+      ],
+      "w": 117.0,
+      "h": 45.0,
+      "description": ""
+    },
+    {
+      "id": "A2",
+      "state_type": "Command",
+      "pos": [
+        242.0,
+        287.0
+      ],
+      "w": 47.0,
+      "h": 115.0,
+      "description": ""
+    },
+    {
+      "id": "A3",
+      "state_type": "Command",
+      "pos": [
+        314.0,
+        273.0
+      ],
+      "w": 46.0,
+      "h": 87.0,
+      "description": ""
+    },
+    {
+      "id": "A4",
+      "state_type": "Command",
+      "pos": [
+        296.0,
+        168.0
+      ],
+      "w": 83.0,
+      "h": 52.0,
+      "description": ""
+    },
+    {
+      "id": "D1",
+      "state_type": "Safety",
+      "pos": [
+        200.0,
+        474.0
+      ],
+      "w": 274.0,
+      "h": 45.0,
+      "description": ""
+    },
+    {
+      "id": "D2",
+      "state_type": "Safety",
+      "pos": [
+        132.0,
+        392.0
+      ],
+      "w": 98.0,
+      "h": 47.0,
+      "description": ""
+    },
+    {
+      "id": "A5",
+      "state_type": "Command",
+      "pos": [
+        122.0,
+        287.0
+      ],
+      "w": 117.0,
+      "h": 115.0,
+      "description": ""
+    }
+  ],
+  "transitions": [
+    {
+      "id": 0,
+      "from": "A1",
+      "to": "F1",
+      "condition": {
+        "type": "Var",
+        "args": "Depart_cycle"
+      },
+      "waypoints": [
+        [
+          335.5,
+          94.659195
+        ],
+        [
+          349.5,
+          94.659195
+        ],
+        [
+          424.15973,
+          94.659195
+        ],
+        [
+          424.15973,
+          237.5
+        ],
+        [
+          424.15973,
+          251.5
+        ]
+      ]
+    },
+    {
+      "id": 1,
+      "from": "A6",
+      "to": "A1",
+      "condition": {
+        "type": "Var",
+        "args": "Init_OK"
+      },
+      "waypoints": [
+        [
+          180.49998,
+          82.305305
+        ],
+        [
+          220.50002,
+          82.305305
+        ]
+      ]
+    },
+    {
+      "id": 2,
+      "from": "F1",
+      "to": "A2",
+      "condition": {
+        "type": "Var",
+        "args": "Stop"
+      },
+      "waypoints": [
+        [
+          408.5,
+          333.62442
+        ],
+        [
+          265.50003,
+          333.62442
+        ]
+      ]
+    },
+    {
+      "id": 3,
+      "from": "A2",
+      "to": "A1",
+      "condition": {
+        "type": "Var",
+        "args": "Fin_cycle"
+      },
+      "waypoints": [
+        [
+          234.24127,
+          229.5
+        ],
+        [
+          234.24127,
+          100.0
+        ]
+      ]
+    },
+    {
+      "id": 4,
+      "from": "F1",
+      "to": "A3",
+      "condition": {
+        "type": "Var",
+        "args": "Stop_immediat"
+      },
+      "waypoints": [
+        [
+          408.5,
+          299.51837
+        ],
+        [
+          337.0,
+          299.51837
+        ]
+      ]
+    },
+    {
+      "id": 5,
+      "from": "A3",
+      "to": "A4",
+      "condition": {
+        "type": "Var",
+        "args": "Arret_obtenu"
+      },
+      "waypoints": [
+        [
+          307.3624,
+          229.5
+        ],
+        [
+          307.3624,
+          194.0
+        ]
+      ]
+    },
+    {
+      "id": 6,
+      "from": "A4",
+      "to": "F1",
+      "condition": {
+        "type": "Var",
+        "args": "Remise_en_marche"
+      },
+      "waypoints": [
+        [
+          337.5,
+          174.72029
+        ],
+        [
+          351.5,
+          174.72029
+        ],
+        [
+          415.0321,
+          174.72029
+        ],
+        [
+          415.0321,
+          237.5
+        ],
+        [
+          415.0321,
+          251.5
+        ]
+      ]
+    },
+    {
+      "id": 7,
+      "from": "A4",
+      "to": "A6",
+      "condition": {
+        "type": "Var",
+        "args": "Init_position"
+      },
+      "waypoints": []
+    },
+    {
+      "id": 8,
+      "from": "F1",
+      "to": "D1",
+      "condition": {
+        "type": "Var",
+        "args": "Defaut"
+      },
+      "waypoints": [
+        [
+          445.39313,
+          416.5
+        ],
+        [
+          445.39313,
+          430.5
+        ],
+        [
+          445.39313,
+          471.3418
+        ],
+        [
+          351.0,
+          471.3418
+        ],
+        [
+          337.0,
+          471.3418
+        ]
+      ]
+    },
+    {
+      "id": 9,
+      "from": "F1",
+      "to": "D2",
+      "condition": {
+        "type": "Var",
+        "args": "Defaut_direct"
+      },
+      "waypoints": [
+        [
+          428.98074,
+          416.5
+        ],
+        [
+          428.98074,
+          430.5
+        ],
+        [
+          428.9441,
+          430.5
+        ],
+        [
+          428.9441,
+          440.58252
+        ],
+        [
+          154.70425,
+          440.58252
+        ],
+        [
+          154.70425,
+          415.5
+        ]
+      ]
+    },
+    {
+      "id": 10,
+      "from": "D1",
+      "to": "D2",
+      "condition": {
+        "type": "Var",
+        "args": "EU_relachee"
+      },
+      "waypoints": [
+        [
+          110.66651,
+          451.5
+        ],
+        [
+          110.66651,
+          415.5
+        ]
+      ]
+    },
+    {
+      "id": 11,
+      "from": "D1",
+      "to": "A5",
+      "condition": {
+        "type": "Var",
+        "args": "Reset_direct"
+      },
+      "waypoints": [
+        [
+          70.61044,
+          451.5
+        ],
+        [
+          70.61044,
+          344.5
+        ]
+      ]
+    },
+    {
+      "id": 12,
+      "from": "D2",
+      "to": "A5",
+      "condition": {
+        "type": "Var",
+        "args": "Acquit_defaut"
+      },
+      "waypoints": [
+        [
+          112.2227,
+          368.5
+        ],
+        [
+          112.1127,
+          344.5
+        ]
+      ]
+    }
+  ],
+  "next_trans_id": 13,
+  "name": "projet_old",
+  "description": ""
+}

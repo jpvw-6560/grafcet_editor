@@ -1,1 +1,1 @@
-/home/jpvw/Documents/node_appli/gemma_suite/grafcet_editor/data/projets/new_project/project.json
+/home/jpvw/Documents/node_appli/gemma_suite/grafcet_editor/data/projets/projet_old/project.json

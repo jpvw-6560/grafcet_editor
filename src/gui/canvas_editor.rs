@@ -34,6 +34,11 @@ pub struct CanvasEditor {
     dragging_trans: Option<u32>,
     conn_from: Option<u32>,
     selected_step: Option<u32>,
+    selected_trans: Option<u32>,
+    /// Drag du handle de routage Y (segment horizontal src→barre)
+    dragging_route_y: Option<u32>,
+    /// Drag du handle de décrochage X (boucle en retour)
+    dragging_route_x: Option<u32>,
     /// Chemin de sauvegarde propre à cet onglet
     current_path: Option<std::path::PathBuf>,
 }
@@ -49,6 +54,9 @@ impl Default for CanvasEditor {
             dragging_trans: None,
             conn_from: None,
             selected_step: None,
+            selected_trans: None,
+            dragging_route_y: None,
+            dragging_route_x: None,
             current_path: None,
         }
     }
@@ -147,7 +155,7 @@ impl CanvasEditor {
 
         // ── Panneau propriétés (droite) ──────────────────────────────────────
         egui::Panel::right("canvas_props")
-            .min_size(190.0)
+            .min_size(200.0)
             .resizable(true)
             .frame(
                 egui::Frame::new()
@@ -157,9 +165,125 @@ impl CanvasEditor {
             .show_inside(ui, |ui| {
                 ui.heading("Propriétés");
                 ui.separator();
-                if let Some(sel_id) = self.selected_step {
+
+                if let Some(tid) = self.selected_trans {
+                    // ── Propriétés d'une transition sélectionnée ──────────
+                    let trans_data = grafcet.transition(tid).map(|t| {
+                        (t.from_step, t.to_step, t.condition.clone(), t.pos, t.route_y, t.dst_route_x)
+                    });
+                    if let Some((from_step, to_step, cond, pos, route_y, dst_route_x)) = trans_data {
+                        ui.label(egui::RichText::new(format!("Transition T{tid}")).strong());
+                        ui.separator();
+
+                        ui.horizontal(|ui| {
+                            ui.label("Condition :");
+                        });
+                        let mut c = cond.clone();
+                        if ui.text_edit_singleline(&mut c).changed() {
+                            if let Some(t) = grafcet.transition_mut(tid) {
+                                t.condition = c;
+                            }
+                        }
+
+                        ui.separator();
+
+                        // Étape source
+                        ui.horizontal(|ui| {
+                            ui.label("De :");
+                            let step_ids: Vec<u32> = grafcet.steps.iter().map(|s| s.id).collect();
+                            let mut sel_from = from_step;
+                            egui::ComboBox::new(format!("trans_from_{tid}"), "")
+                                .selected_text(format!("E{sel_from}"))
+                                .show_ui(ui, |ui| {
+                                    for sid in &step_ids {
+                                        ui.selectable_value(&mut sel_from, *sid, format!("E{sid}"));
+                                    }
+                                });
+                            if sel_from != from_step {
+                                if let Some(t) = grafcet.transition_mut(tid) {
+                                    t.from_step = sel_from;
+                                }
+                            }
+                        });
+
+                        // Étape destination
+                        ui.horizontal(|ui| {
+                            ui.label("Vers :");
+                            let step_ids: Vec<u32> = grafcet.steps.iter().map(|s| s.id).collect();
+                            let mut sel_to = to_step;
+                            egui::ComboBox::new(format!("trans_to_{tid}"), "")
+                                .selected_text(format!("E{sel_to}"))
+                                .show_ui(ui, |ui| {
+                                    for sid in &step_ids {
+                                        ui.selectable_value(&mut sel_to, *sid, format!("E{sid}"));
+                                    }
+                                });
+                            if sel_to != to_step {
+                                if let Some(t) = grafcet.transition_mut(tid) {
+                                    t.to_step = sel_to;
+                                }
+                            }
+                        });
+
+                        ui.separator();
+                        ui.label(format!("Pos barre : ({:.0}, {:.0})", pos[0], pos[1]));
+
+                        // ── Routage des liaisons ───────────────────────────
+                        ui.separator();
+                        ui.label(egui::RichText::new("Routage des liaisons").color(
+                            egui::Color32::from_rgb(255, 160, 50)));
+
+                        // Handle Y (segment horizontal haut)
+                        ui.horizontal(|ui| {
+                            let label = if let Some(ry) = route_y {
+                                format!("Y haut : {:.0}", ry)
+                            } else {
+                                "Y haut : auto".to_string()
+                            };
+                            ui.label(egui::RichText::new(label).size(11.0)
+                                .color(egui::Color32::from_rgb(255, 140, 0)));
+                            if route_y.is_some() {
+                                if ui.small_button("↺").on_hover_text("Remettre en automatique").clicked() {
+                                    if let Some(t) = grafcet.transition_mut(tid) {
+                                        t.route_y = None;
+                                    }
+                                }
+                            }
+                        });
+                        ui.label(egui::RichText::new(
+                            "● Glisser le rond orange sur le canvas"
+                        ).weak().size(10.0));
+
+                        // Handle X (décrochage boucle retour)
+                        if dst_route_x.is_some() {
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new(
+                                    format!("X retour : {:.0}", dst_route_x.unwrap()))
+                                    .size(11.0)
+                                    .color(egui::Color32::from_rgb(0, 200, 180)));
+                                if ui.small_button("↺").on_hover_text("Remettre en automatique").clicked() {
+                                    if let Some(t) = grafcet.transition_mut(tid) {
+                                        t.dst_route_x = None;
+                                    }
+                                }
+                            });
+                        }
+
+                        ui.separator();
+                        if ui.button("🗑 Supprimer cette transition").clicked() {
+                            grafcet.remove_transition(tid);
+                            self.selected_trans = None;
+                            status_out = Some(format!("Transition T{tid} supprimée"));
+                        }
+                        ui.label(egui::RichText::new("Touche [Suppr] pour effacer").weak().italics().size(10.0));
+                    } else {
+                        self.selected_trans = None;
+                    }
+                } else if let Some(sel_id) = self.selected_step {
+                    // ── Propriétés d'une étape sélectionnée ───────────────
                     if let Some(step) = grafcet.step_mut(sel_id) {
-                        ui.label(format!("Étape #{}", step.id));
+                        ui.label(egui::RichText::new(format!("Étape E{}", step.id)).strong());
+                        ui.separator();
                         ui.horizontal(|ui| {
                             ui.label("Label :");
                             ui.text_edit_singleline(&mut step.label);
@@ -181,22 +305,21 @@ impl CanvasEditor {
                     } else {
                         self.selected_step = None;
                     }
-                } else {
-                    ui.label("Cliquez sur une étape pour la sélectionner.");
-                }
 
-                ui.separator();
-                ui.label("Transitions depuis l'étape sélectionnée :");
-                if let Some(sid) = self.selected_step {
-                    let trans: Vec<(u32, String)> = grafcet
+                    ui.separator();
+                    ui.label("Transitions liées :");
+                    let trans: Vec<(u32, u32, u32, String)> = grafcet
                         .transitions
                         .iter()
-                        .filter(|t| t.from_step == sid || t.to_step == sid)
-                        .map(|t| (t.id, t.condition.clone()))
+                        .filter(|t| t.from_step == sel_id || t.to_step == sel_id)
+                        .map(|t| (t.id, t.from_step, t.to_step, t.condition.clone()))
                         .collect();
-                    for (tid, cond) in trans {
+                    for (tid, from, to, cond) in trans {
                         ui.horizontal(|ui| {
-                            ui.label(format!("T{tid} :"));
+                            if ui.selectable_label(false, format!("T{tid} (E{from}→E{to})")).clicked() {
+                                self.selected_trans = Some(tid);
+                                self.selected_step = None;
+                            }
                             let mut c = cond.clone();
                             if ui.text_edit_singleline(&mut c).changed() {
                                 if let Some(t) = grafcet.transition_mut(tid) {
@@ -205,6 +328,10 @@ impl CanvasEditor {
                             }
                         });
                     }
+                } else {
+                    ui.label("Cliquez sur une étape ou une transition.");
+                    ui.add_space(4.0);
+                    ui.label(egui::RichText::new("• Select + clic → sélectionner\n• [Suppr] → effacer l'élément sélectionné").weak().size(11.0));
                 }
             });
 
@@ -239,7 +366,120 @@ impl CanvasEditor {
 
                 draw_steps(&painter, grafcet, self.offset, self.zoom, self.dragging_step);
                 draw_links(&painter, grafcet, self.offset, self.zoom);
-                draw_transitions(&painter, grafcet, self.offset, self.zoom, self.dragging_trans, hover_trans);
+                draw_transitions(&painter, grafcet, self.offset, self.zoom, self.selected_trans, hover_trans);
+
+                // ── Handles de routage via ui.interact() ─────────────────────
+                // Rappel de convention :
+                //   draw_*  → coordonnées écran = pos * zoom + offset  (le Painter est absolu)
+                //   ui.interact() → coordonnées locales ui = écran + resp.rect.min
+                // Donc il faut ajouter resp.rect.min aux positions calculées.
+                let origin = resp.rect.min;
+                if self.tool == Tool::Select {
+                    if let Some(tid) = self.selected_trans {
+                        let hdata = grafcet.transition(tid).and_then(|t| {
+                            let tp   = t.pos;
+                            let ry   = t.route_y;
+                            let rx   = t.dst_route_x;
+                            let sp   = grafcet.step(t.from_step)?.pos;
+                            let dp   = grafcet.step(t.to_step)?.pos;
+                            Some((tp, sp, dp, ry, rx))
+                        });
+                        if let Some((t_pos, src_pos, dst_pos, route_y, dst_route_x)) = hdata {
+                            const R:  f32 = 8.0;
+                            const HS: f32 = 22.0;  // zone cliquable (px)
+
+                            // ── Handle Y ────────────────────────────────────
+                            let auto_y = src_pos[1] + STEP_H / 2.0
+                                + crate::gui::canvas::STEP_WICK;
+                            let hy_cv  = route_y.unwrap_or(auto_y);
+                            let hx_cv  = (src_pos[0] + t_pos[0]) / 2.0;
+                            // coordonnées draw (Painter absolu)
+                            let hx_draw = hx_cv * self.zoom + self.offset.x;
+                            let hy_draw = hy_cv * self.zoom + self.offset.y;
+                            // coordonnées ui.interact (locales = draw + origin)
+                            let hy_rect = egui::Rect::from_center_size(
+                                Pos2::new(hx_draw + origin.x, hy_draw + origin.y),
+                                egui::Vec2::splat(HS),
+                            );
+                            let hy_resp = ui.interact(
+                                hy_rect,
+                                egui::Id::new("rh_y").with(tid),
+                                egui::Sense::drag(),
+                            );
+                            if hy_resp.dragged() {
+                                let dy = hy_resp.drag_delta().y / self.zoom;
+                                if let Some(t) = grafcet.transition_mut(tid) {
+                                    t.route_y = Some(hy_cv + dy);
+                                }
+                            }
+                            let col_y = if hy_resp.is_pointer_button_down_on() || hy_resp.dragged() {
+                                egui::Color32::from_rgb(255, 240, 80)
+                            } else if hy_resp.hovered() {
+                                egui::Color32::from_rgb(255, 200, 60)
+                            } else {
+                                egui::Color32::from_rgb(255, 140, 0)
+                            };
+                            if hy_resp.hovered() {
+                                ctx.set_cursor_icon(egui::CursorIcon::ResizeVertical);
+                            }
+                            painter.circle_filled(Pos2::new(hx_draw, hy_draw), R, col_y);
+                            painter.circle_stroke(
+                                Pos2::new(hx_draw, hy_draw), R,
+                                egui::Stroke::new(1.5, egui::Color32::WHITE),
+                            );
+                            painter.text(
+                                Pos2::new(hx_draw, hy_draw), egui::Align2::CENTER_CENTER, "↕",
+                                egui::FontId::proportional(9.0), egui::Color32::WHITE,
+                            );
+
+                            // ── Handle X (boucle en retour) ─────────────────
+                            let t_bot_cv = t_pos[1] + crate::gui::canvas::TRANS_WICK;
+                            let dy_anc   = dst_pos[1]
+                                - (STEP_H / 2.0 + crate::gui::canvas::STEP_WICK);
+                            if dy_anc < t_bot_cv {
+                                let auto_rx  = t_pos[0].min(dst_pos[0]) - (STEP_W / 2.0 + 25.0);
+                                let rx_cv    = dst_route_x.unwrap_or(auto_rx);
+                                let mid_y_cv = (t_bot_cv + dy_anc) / 2.0;
+                                let rx_draw  = rx_cv    * self.zoom + self.offset.x;
+                                let my_draw  = mid_y_cv * self.zoom + self.offset.y;
+                                let rx_rect  = egui::Rect::from_center_size(
+                                    Pos2::new(rx_draw + origin.x, my_draw + origin.y),
+                                    egui::Vec2::splat(HS),
+                                );
+                                let rx_resp = ui.interact(
+                                    rx_rect,
+                                    egui::Id::new("rh_x").with(tid),
+                                    egui::Sense::drag(),
+                                );
+                                if rx_resp.dragged() {
+                                    let dx = rx_resp.drag_delta().x / self.zoom;
+                                    if let Some(t) = grafcet.transition_mut(tid) {
+                                        t.dst_route_x = Some(rx_cv + dx);
+                                    }
+                                }
+                                let col_x = if rx_resp.is_pointer_button_down_on() || rx_resp.dragged() {
+                                    egui::Color32::from_rgb(60, 255, 235)
+                                } else if rx_resp.hovered() {
+                                    egui::Color32::from_rgb(60, 240, 220)
+                                } else {
+                                    egui::Color32::from_rgb(0, 200, 180)
+                                };
+                                if rx_resp.hovered() {
+                                    ctx.set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+                                }
+                                painter.circle_filled(Pos2::new(rx_draw, my_draw), R, col_x);
+                                painter.circle_stroke(
+                                    Pos2::new(rx_draw, my_draw), R,
+                                    egui::Stroke::new(1.5, egui::Color32::WHITE),
+                                );
+                                painter.text(
+                                    Pos2::new(rx_draw, my_draw), egui::Align2::CENTER_CENTER, "↔",
+                                    egui::FontId::proportional(9.0), egui::Color32::WHITE,
+                                );
+                            }
+                        }
+                    }
+                }
 
                 if self.tool == Tool::AddStep {
                     if let Some(mouse) = ctx.pointer_interact_pos() {
@@ -284,9 +524,22 @@ impl CanvasEditor {
                             (p.y - origin.y - self.offset.y) / self.zoom,
                         );
 
-                        let trans_grabbed = if self.tool == Tool::Select {
+                // ── Hit-test handles de routage (priorité max en mode Select) ─
+                        // Les handles utilisent ui.interact() → pas de hit-test manuel ici.
+                        let route_grabbed = false;
+
+                        let trans_grabbed = route_grabbed || if self.tool == Tool::Select {
                             if let Some(tid) = hit_transition(cv, grafcet) {
+                                self.selected_trans = Some(tid);
                                 self.dragging_trans = Some(tid);
+                                self.selected_step = None;
+                                true
+                            } else { false }
+                        } else if self.tool == Tool::Delete {
+                            if let Some(tid) = hit_transition(cv, grafcet) {
+                                grafcet.remove_transition(tid);
+                                if self.selected_trans == Some(tid) { self.selected_trans = None; }
+                                status_out = Some(format!("Transition T{tid} supprimée"));
                                 true
                             } else { false }
                         } else { false };
@@ -328,6 +581,7 @@ impl CanvasEditor {
                                     }
                                     Tool::Select => {
                                         self.selected_step = None;
+                                        self.selected_trans = None;
                                         self.conn_from = None;
                                     }
                                     _ => {}
@@ -338,6 +592,7 @@ impl CanvasEditor {
                 }
 
                 if primary_down {
+                    // Drag de la barre de transition (route_y/x gérés par ui.interact() ci-dessus)
                     if let Some(tid) = self.dragging_trans {
                         if let Some(t) = grafcet.transition_mut(tid) {
                             t.pos[0] += ptr_delta.x / self.zoom;
@@ -359,6 +614,21 @@ impl CanvasEditor {
                 if primary_up {
                     self.dragging_step = None;
                     self.dragging_trans = None;
+                    self.dragging_route_y = None;
+                    self.dragging_route_x = None;
+                }
+
+                // Touche Delete : supprime l'élément sélectionné
+                if ctx.input(|i| i.key_pressed(egui::Key::Delete)) {
+                    if let Some(tid) = self.selected_trans {
+                        grafcet.remove_transition(tid);
+                        self.selected_trans = None;
+                        status_out = Some(format!("Transition T{tid} supprimée"));
+                    } else if let Some(sid) = self.selected_step {
+                        grafcet.remove_step(sid);
+                        self.selected_step = None;
+                        status_out = Some(format!("Étape E{sid} supprimée"));
+                    }
                 }
 
                 let scroll = ctx.input(|i| i.smooth_scroll_delta.y);

@@ -241,3 +241,33 @@ pub fn static_gemma_waypoints(from_id: &str, to_id: &str) -> Vec<[f32; 2]> {
         _ => vec![],
     }
 }
+
+// ── Routes sauvegardées (gemma_routes.json) ───────────────────────────────────
+
+/// Table (from, to) → (waypoints, condition_string).
+pub type SavedRoutes = std::collections::HashMap<(String, String), (Vec<[f32; 2]>, String)>;
+
+/// Charge `data/gemma_routes.json` et retourne la table des routes validées.
+/// Retourne une table vide si le fichier est absent ou invalide.
+pub fn load_saved_routes() -> SavedRoutes {
+    #[derive(serde::Deserialize)]
+    struct Entry {
+        from: String,
+        to: String,
+        #[serde(default)]
+        points: Vec<[f32; 2]>,
+        #[serde(default)]
+        condition: String,
+    }
+    let content = match std::fs::read_to_string("data/gemma_routes.json") {
+        Ok(s)  => s,
+        Err(_) => return SavedRoutes::new(),
+    };
+    let entries: Vec<Entry> = match serde_json::from_str(&content) {
+        Ok(v)  => v,
+        Err(_) => return SavedRoutes::new(),
+    };
+    entries.into_iter()
+        .map(|e| ((e.from, e.to), (e.points, e.condition)))
+        .collect()
+}

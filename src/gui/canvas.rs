@@ -69,7 +69,12 @@ pub fn draw_links(painter: &Painter, grafcet: &Grafcet, offset: Vec2, zoom: f32)
 
         // Positions écran (transition a sa propre position absolue)
         let sx = src.pos[0] * zoom + offset.x;
-        let sy_anchor = src.pos[1] * zoom + offset.y + (STEP_H / 2.0 + STEP_WICK) * zoom;
+        // route_y override (canvas → écran) pour le segment horizontal src→barre
+        let sy_anchor = if let Some(ry) = t.route_y {
+            ry * zoom + offset.y
+        } else {
+            src.pos[1] * zoom + offset.y + (STEP_H / 2.0 + STEP_WICK) * zoom
+        };
         let tx = t.pos[0] * zoom + offset.x;
         let ty = t.pos[1] * zoom + offset.y;
         let th = TRANS_H * zoom / 2.0;
@@ -97,7 +102,11 @@ pub fn draw_links(painter: &Painter, grafcet: &Grafcet, offset: Vec2, zoom: f32)
         // ── Mèche basse → destination ──
         let goes_up = dy_anchor < t_bot_y; // destination au-dessus du bas de la transition
         if goes_up {
-            let route_x = tx.min(dx) - (STEP_W / 2.0 + 25.0) * zoom;
+            let route_x = if let Some(rx) = t.dst_route_x {
+                rx * zoom + offset.x
+            } else {
+                tx.min(dx) - (STEP_W / 2.0 + 25.0) * zoom
+            };
             painter.line_segment([Pos2::new(tx, t_bot_y), Pos2::new(route_x, t_bot_y)], stroke);
             painter.line_segment([Pos2::new(route_x, t_bot_y), Pos2::new(route_x, dy_anchor)], stroke);
             painter.line_segment([Pos2::new(route_x, dy_anchor), Pos2::new(dx, dy_anchor)], stroke);
@@ -132,11 +141,13 @@ pub fn draw_transitions(
 
         let is_active = selected_trans == Some(t.id) || hovered_trans == Some(t.id);
         let bar_color = if selected_trans == Some(t.id) {
-            Color32::from_rgb(255, 220, 80)
+            Color32::from_rgb(255, 220, 80)   // sélectionnée → jaune
         } else if hovered_trans == Some(t.id) {
-            Color32::from_rgb(200, 240, 255)
+            Color32::from_rgb(200, 240, 255)  // survolée → bleu clair
+        } else if t.condition != "1" && !t.condition.is_empty() {
+            Color32::WHITE                    // condition explicite → blanc
         } else {
-            C_TRANS
+            C_TRANS                           // défaut "1" → gris
         };
 
         painter.rect_filled(

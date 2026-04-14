@@ -417,7 +417,13 @@ impl App {
                 if let (Some(&f), Some(&to)) = (from_id, to_id) {
                     let tid = ng.grafcet.add_transition(f, to);
                     if let Some(tr) = ng.grafcet.transition_mut(tid) {
-                        tr.condition = t.cond.clone();
+                        // Normalise "TRUE" (valeur par défaut Expr) en "1" (convention GRAFCET)
+                        let cond = t.cond.clone();
+                        tr.condition = if cond == "TRUE" || cond.is_empty() {
+                            "1".to_string()
+                        } else {
+                            cond
+                        };
                     }
                 }
             }

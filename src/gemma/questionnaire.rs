@@ -128,7 +128,13 @@ impl Questionnaire {
     /// Applique les réponses au GEMMA : ajoute états + transitions manquants.
     /// Les états déjà présents ne sont pas dupliqués.
     /// Utilise les positions canoniques du modèle Python (canvas 1620×1020 → 700×550).
-    pub fn apply_to_gemma(&self, gemma: &mut Gemma) {
+    /// `saved_routes` : table chargée depuis `data/gemma_routes.json` — utilisée
+    /// en priorité absolue pour les waypoints.  Les conditions viennent du questionnaire.
+    pub fn apply_to_gemma(
+        &self,
+        gemma: &mut Gemma,
+        saved_routes: &super::SavedRoutes,
+    ) {
         // 1. Collecter tous les states/transitions à ajouter
         let mut states_to_add: Vec<(String, StateType)> = Vec::new();
         let mut trans_to_add: Vec<(String, String, String)> = Vec::new();
@@ -195,14 +201,25 @@ impl Questionnaire {
             }
         }
 
-        // 3. Ajouter les transitions (pas de doublon from+to)
+        // 3. Ajouter/mettre à jour les transitions
+        // Waypoints : routes sauvegardées (immuables, priorité absolue).
+        // Conditions : questionnaire JSON.
         for (from, to, cond) in &trans_to_add {
-            let already = gemma.transitions.iter().any(|t| &t.from == from && &t.to == to);
-            if !already {
+            let key = (from.clone(), to.clone());
+            let saved_wpts: Option<Vec<[f32; 2]>> = saved_routes.get(&key)
+                .and_then(|(wpts, _)| if !wpts.is_empty() { Some(wpts.clone()) } else { None });
+
+            if let Some(t) = gemma.transitions.iter_mut()
+                    .find(|t| &t.from == from && &t.to == to) {
+                // Transition existante : mettre à jour condition + waypoints
+                t.condition = Expr::from_str(cond);
+                if let Some(wpts) = saved_wpts {
+                    t.waypoints = wpts;
+                }
+            } else {
+                // Nouvelle transition
                 let id = gemma.add_transition(from.clone(), to.clone(), Expr::from_str(cond));
-                // Pré-remplir les waypoints depuis la table statique validée
-                let wpts = super::static_gemma_waypoints(from, to);
-                if !wpts.is_empty() {
+                if let Some(wpts) = saved_wpts {
                     if let Some(t) = gemma.transitions.iter_mut().find(|t| t.id == id) {
                         t.waypoints = wpts;
                     }

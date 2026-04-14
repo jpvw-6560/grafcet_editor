@@ -246,17 +246,79 @@ impl GemmaPage {
                         if let Some(t) = gemma.transitions.iter().find(|t| t.id == tid) {
                             if !t.waypoints.is_empty() {
                                 let cond = t.condition.to_display();
-                                let label = if cond == "FALSE" || cond == "TRUE" {
-                                    format!("{} → {} : (aucune condition)", t.from, t.to)
+                                let has_cond = cond != "FALSE" && cond != "TRUE";
+                                let line1 = format!("{} -> {}", t.from, t.to);
+                                let line2 = if has_cond {
+                                    Some(format!("Condition : {}", cond))
                                 } else {
-                                    format!("{} → {} : {}", t.from, t.to, cond)
+                                    None
                                 };
-                                egui::show_tooltip_at_pointer(
-                                    &ctx,
-                                    ui.layer_id(),
-                                    egui::Id::new("__trans_hover_tip"),
-                                    |ui| { ui.label(&label); },
-                                );
+
+                                // Dessin manuel du tooltip sur couche Tooltip (pas de clip)
+                                if let Some(mp) = ctx.pointer_hover_pos() {
+                                    let tip_painter = ctx.layer_painter(egui::LayerId::new(
+                                        egui::Order::Tooltip,
+                                        egui::Id::new("gemma_trans_tooltip"),
+                                    ));
+                                    let font       = egui::FontId::proportional(12.0);
+                                    let text_color = Color32::BLACK;
+                                    let bg_color   = Color32::from_rgb(255, 253, 180);
+                                    let border_col = Color32::from_rgb(80, 80, 80);
+                                    let pad = egui::Vec2::new(8.0, 6.0);
+
+                                    // Mesure des deux lignes
+                                    let gal1 = ctx.fonts_mut(|f| {
+                                        f.layout_no_wrap(line1.clone(), font.clone(), text_color)
+                                    });
+                                    let w1 = gal1.size().x;
+                                    let h1 = gal1.size().y;
+
+                                    let (w2, h2, gal2) = if let Some(ref l2) = line2 {
+                                        let g = ctx.fonts_mut(|f| {
+                                            f.layout_no_wrap(l2.clone(), font.clone(), text_color)
+                                        });
+                                        (g.size().x, g.size().y, Some(g))
+                                    } else {
+                                        (0.0_f32, 0.0_f32, None)
+                                    };
+
+                                    let sep = if line2.is_some() { 4.0 } else { 0.0 };
+                                    let content_w = w1.max(w2);
+                                    let content_h = h1 + sep + h2;
+
+                                    let box_w = content_w + pad.x * 2.0;
+                                    let box_h = content_h + pad.y * 2.0;
+
+                                    // Position : décalée en bas-droite du curseur
+                                    let offset_tip = egui::Vec2::new(14.0, 14.0);
+                                    let mut tl = mp + offset_tip;
+                                    // Rester dans la fenêtre
+                                    let screen = ctx.screen_rect();
+                                    if tl.x + box_w > screen.max.x - 4.0 {
+                                        tl.x = mp.x - box_w - 6.0;
+                                    }
+                                    if tl.y + box_h > screen.max.y - 4.0 {
+                                        tl.y = mp.y - box_h - 6.0;
+                                    }
+                                    let rect = egui::Rect::from_min_size(tl, egui::Vec2::new(box_w, box_h));
+
+                                    tip_painter.rect_filled(rect, 3.0, bg_color);
+                                    tip_painter.rect_stroke(
+                                        rect, 3.0,
+                                        egui::Stroke::new(1.0, border_col),
+                                        egui::StrokeKind::Outside,
+                                    );
+                                    tip_painter.galley(
+                                        egui::Pos2::new(tl.x + pad.x, tl.y + pad.y),
+                                        gal1, text_color,
+                                    );
+                                    if let Some(g2) = gal2 {
+                                        tip_painter.galley(
+                                            egui::Pos2::new(tl.x + pad.x, tl.y + pad.y + h1 + sep),
+                                            g2, text_color,
+                                        );
+                                    }
+                                }
                             }
                         }
                     }
@@ -404,15 +466,29 @@ impl GemmaPage {
                                     if let Some(ref pf) = self.pending_from.clone() {
                                         // Deuxième clic : finaliser
                                         if a.state_id != pf.state_id {
-                                            let wpts = orthogonal_route(
-                                                pf.pos, pf.side, a.pos, a.side);
                                             let from = pf.state_id.clone();
                                             let to   = a.state_id.clone();
                                             let id = gemma.add_transition(
                                                 from.clone(), to.clone(), Expr::True);
                                             if let Some(t) = gemma.transitions.iter_mut()
                                                     .find(|t| t.id == id) {
-                                                t.waypoints = wpts;
+                                                // Route mémorisée → priorité absolue
+                                                let saved = crate::gemma::load_saved_routes();
+                                                let key = (from.clone(), to.clone());
+                                                if let Some((saved_wpts, saved_cond)) = saved.get(&key) {
+                                                    if !saved_wpts.is_empty() {
+                                                        t.waypoints = saved_wpts.clone();
+                                                    } else {
+                                                        t.waypoints = orthogonal_route(
+                                                            pf.pos, pf.side, a.pos, a.side);
+                                                    }
+                                                    if !saved_cond.is_empty() {
+                                                        t.condition = Expr::from_str(saved_cond);
+                                                    }
+                                                } else {
+                                                    t.waypoints = orthogonal_route(
+                                                        pf.pos, pf.side, a.pos, a.side);
+                                                }
                                             }
                                             self.pending_from = None;
                                             self.needs_save = true;
@@ -466,7 +542,96 @@ impl GemmaPage {
                     self.offset += resp.drag_delta();
                 }
 
-                // (Drag nœuds / extrémités / segments inhibé)
+                // ── Handles de déplacement de segments (transition sélectionnée) ──
+                // Un handle carré est placé au milieu de chaque segment intermédiaire.
+                // ui.interact(Sense::drag) gère le hit-test et le drag nativement.
+                // Convention écran : canvas_to_screen(pos, offset, zoom, origin)
+                //                  = pos * zoom + offset + origin
+                // ui.interact prend des coordonnées écran absolues → même convention.
+                if self.tool == GemmaTool::Select {
+                    if let Some(tid) = self.selected_trans {
+                        // Normaliser pour garantir des segments strictement H/V
+                        let wpts: Vec<[f32; 2]> = gemma.transitions.iter()
+                            .find(|t| t.id == tid)
+                            .map(|t| normalize_ortho_route(t.waypoints.clone()))
+                            .unwrap_or_default();
+
+                        const HS: f32 = 16.0;  // taille zone cliquable px
+                        const HR: f32 = 5.0;   // demi-côté du carré visuel
+
+                        for i in 0..wpts.len().saturating_sub(1) {
+                            let a = wpts[i];
+                            let b = wpts[i + 1];
+                            let is_horiz = (a[1] - b[1]).abs() < 1.0;
+                            let is_vert  = (a[0] - b[0]).abs() < 1.0;
+                            if !is_horiz && !is_vert { continue; }
+
+                            // Milieu du segment en canvas
+                            let mid_cv = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0];
+                            let mid_sp = canvas_to_screen(mid_cv, self.offset, self.zoom, origin);
+
+                            let handle_rect = egui::Rect::from_center_size(
+                                mid_sp, egui::Vec2::splat(HS),
+                            );
+                            let seg_resp = ui.interact(
+                                handle_rect,
+                                egui::Id::new("gemma_seg").with(tid).with(i),
+                                egui::Sense::drag(),
+                            );
+
+                            if seg_resp.dragged() {
+                                let delta_cv = seg_resp.drag_delta() / self.zoom;
+                                if let Some(t) = gemma.transitions.iter_mut().find(|t| t.id == tid) {
+                                    // Normaliser d'abord pour partir d'une base propre
+                                    t.waypoints = normalize_ortho_route(
+                                        std::mem::take(&mut t.waypoints));
+                                    if i + 1 < t.waypoints.len() {
+                                        if is_horiz {
+                                            // Segment horizontal → déplacement Y
+                                            t.waypoints[i][1]     += delta_cv.y;
+                                            t.waypoints[i + 1][1] += delta_cv.y;
+                                        } else {
+                                            // Segment vertical → déplacement X
+                                            t.waypoints[i][0]     += delta_cv.x;
+                                            t.waypoints[i + 1][0] += delta_cv.x;
+                                        }
+                                        // Re-normaliser pour conserver la propriété
+                                        t.waypoints = normalize_ortho_route(
+                                            std::mem::take(&mut t.waypoints));
+                                    }
+                                    self.needs_save = true;
+                                }
+                            }
+
+                            let col = if seg_resp.dragged() || seg_resp.is_pointer_button_down_on() {
+                                Color32::from_rgb(255, 240, 80)
+                            } else if seg_resp.hovered() {
+                                Color32::from_rgb(255, 200, 60)
+                            } else {
+                                Color32::from_rgb(180, 140, 50)
+                            };
+                            if seg_resp.hovered() {
+                                ctx.set_cursor_icon(if is_horiz {
+                                    egui::CursorIcon::ResizeVertical
+                                } else {
+                                    egui::CursorIcon::ResizeHorizontal
+                                });
+                            }
+                            painter.rect_filled(
+                                egui::Rect::from_center_size(mid_sp, egui::Vec2::splat(HR * 2.0)),
+                                egui::CornerRadius::ZERO,
+                                col,
+                            );
+                            painter.rect_stroke(
+                                egui::Rect::from_center_size(mid_sp, egui::Vec2::splat(HR * 2.0)),
+                                egui::CornerRadius::ZERO,
+                                egui::Stroke::new(1.0, Color32::WHITE),
+                                egui::StrokeKind::Middle,
+                            );
+                        }
+                    }
+                }
+                // ── Fin handles ────────────────────────────────────────────
 
                 // Zoom molette
                 let scroll = ctx.input(|i| i.smooth_scroll_delta.y);
@@ -687,8 +852,9 @@ impl GemmaPage {
                     egui::RichText::new("⚙ Appliquer au GEMMA").size(12.0)
                 ).fill(Color32::from_rgb(41, 128, 185));
                 if ui.add(apply_btn).clicked() {
+                    let saved_routes = crate::gemma::load_saved_routes();
                     let before = gemma.states.len();
-                    self.questionnaire.apply_to_gemma(gemma);
+                    self.questionnaire.apply_to_gemma(gemma, &saved_routes);
                     let added = gemma.states.len() - before;
                     self.pending_fit = true;
                     self.needs_save = true;
@@ -791,6 +957,66 @@ fn snap_perimeter(
         }
     }
     best.map(|(_, a, sp)| (a, sp))
+}
+
+// ── Normalisation de route orthogonale ────────────────────────────────────────
+
+/// Nettoie une liste de waypoints pour garantir des segments strictement
+/// horizontaux ou verticaux :
+/// 1. Snape chaque point de façon à ce que le segment avec le précédent
+///    soit exactement H ou V (en propageant depuis le premier point).
+/// 2. Supprime les points dégénérés (distance < 0.5 px canvas du précédent).
+/// 3. Fusionne les segments colinéaires consécutifs (supprime les points
+///    intermédiaires sur la même droite).
+fn normalize_ortho_route(pts: Vec<[f32; 2]>) -> Vec<[f32; 2]> {
+    if pts.len() < 2 { return pts; }
+
+    // Passe 1 : snap vers H ou V en partant du premier point
+    let mut s = pts;
+    for i in 0..s.len() - 1 {
+        let dx = (s[i + 1][0] - s[i][0]).abs();
+        let dy = (s[i + 1][1] - s[i][1]).abs();
+        if dy <= dx { s[i + 1][1] = s[i][1]; }  // H : même Y
+        else        { s[i + 1][0] = s[i][0]; }  // V : même X
+    }
+
+    // Passe 2 : supprimer les doublons / segments quasi-nuls (< 0.5 px)
+    let mut d: Vec<[f32; 2]> = Vec::with_capacity(s.len());
+    for p in &s {
+        match d.last() {
+            Some(&last)
+                if (p[0] - last[0]).abs() < 0.5
+                && (p[1] - last[1]).abs() < 0.5 => {}
+            _ => d.push(*p),
+        }
+    }
+
+    // Passe 3 : re-snap après dédoublonnage
+    for i in 0..d.len().saturating_sub(1) {
+        let dx = (d[i + 1][0] - d[i][0]).abs();
+        let dy = (d[i + 1][1] - d[i][1]).abs();
+        if dy <= dx { d[i + 1][1] = d[i][1]; }
+        else        { d[i + 1][0] = d[i][0]; }
+    }
+
+    // Passe 4 : fusionner les segments colinéaires
+    if d.len() < 3 { return d; }
+    let mut r: Vec<[f32; 2]> = Vec::with_capacity(d.len());
+    r.push(d[0]);
+    for i in 1..d.len() - 1 {
+        let prev = *r.last().unwrap();
+        let curr = d[i];
+        let next = d[i + 1];
+        let h_prev = (curr[1] - prev[1]).abs() < 0.1;
+        let h_next = (next[1] - curr[1]).abs() < 0.1;
+        let v_prev = (curr[0] - prev[0]).abs() < 0.1;
+        let v_next = (next[0] - curr[0]).abs() < 0.1;
+        // Point intermédiaire colinéaire = inutile, on le saute
+        if (h_prev && h_next) || (v_prev && v_next) { continue; }
+        r.push(curr);
+    }
+    r.push(*d.last().unwrap());
+    r
 }
 
 // ── Routage orthogonal ─────────────────────────────────────────────────────────
@@ -1050,21 +1276,23 @@ fn draw_arrow(
 
 // ── Sauvegarde des routes ───────────────────────────────────────────────────────
 
-/// Exporte les waypoints de toutes les transitions dans `data/gemma_routes.json`.
+/// Exporte les waypoints et conditions de toutes les transitions dans `data/gemma_routes.json`.
 fn save_routes(gemma: &Gemma) -> Result<String, String> {
     use std::fs;
     #[derive(serde::Serialize)]
     struct RouteEntry<'a> {
-        from:   &'a str,
-        to:     &'a str,
-        points: &'a [[f32; 2]],
+        from:      &'a str,
+        to:        &'a str,
+        points:    &'a [[f32; 2]],
+        condition: String,
     }
     let entries: Vec<RouteEntry<'_>> = gemma.transitions.iter()
         .filter(|t| !t.waypoints.is_empty())
         .map(|t| RouteEntry {
-            from:   &t.from,
-            to:     &t.to,
-            points: &t.waypoints,
+            from:      &t.from,
+            to:        &t.to,
+            points:    &t.waypoints,
+            condition: t.condition.to_display(),
         })
         .collect();
     let json = serde_json::to_string_pretty(&entries)

@@ -9,6 +9,15 @@ pub struct Transition {
     pub condition: String,
     #[serde(default)]
     pub pos: [f32; 2],    // position absolue de la barre (coordonnées logiques canvas)
+    /// Override de la coordonnée Y (canvas) du segment horizontal src→barre.
+    /// None = automatique (bas de l'étape source + STEP_WICK).
+    #[serde(default)]
+    pub route_y: Option<f32>,
+    /// Override de la coordonnée X (canvas) du décrochage latéral pour les
+    /// liaisons en retour (boucle vers le haut).
+    /// None = automatique.
+    #[serde(default)]
+    pub dst_route_x: Option<f32>,
 }
 
 impl Transition {
@@ -19,6 +28,8 @@ impl Transition {
             to_step,
             condition: "1".to_string(),
             pos,
+            route_y: None,
+            dst_route_x: None,
         }
     }
 }

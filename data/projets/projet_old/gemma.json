@@ -390,9 +390,28 @@
           344.5
         ]
       ]
+    },
+    {
+      "id": 13,
+      "from": "A5",
+      "to": "A6",
+      "condition": {
+        "type": "Var",
+        "args": "Reprise_apres_defaut"
+      },
+      "waypoints": [
+        [
+          70.43205,
+          229.5
+        ],
+        [
+          70.43205,
+          102.5
+        ]
+      ]
     }
   ],
-  "next_trans_id": 13,
+  "next_trans_id": 14,
   "name": "projet_old",
   "description": ""
 }

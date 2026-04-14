@@ -226,6 +226,176 @@ impl Questionnaire {
                 }
             }
         }
+
+        // 4. Fermeture des circuits ouverts (règle GEMMA)
+        close_open_circuits(gemma, saved_routes);
+    }
+}
+
+/// Ferme les circuits ouverts du GEMMA selon les règles normalisées
+/// (voir circuits_fermes_possibles.md).
+///
+/// Deux passes itératives jusqu'à stabilisation :
+///   1. États drain  (aucune sortie)  → ajouter la transition sortante manquante
+///   2. États source non-initiaux (aucune entrée, sauf A1/A6) → ajouter l'entrée manquante
+///
+/// Transitions INTERDITES (jamais générées automatiquement) :
+///   D1→F1  (court-circuit sécurité), A3→F1  (saut arrêt contrôlé),
+///   A7→F1  (saut mode réglage),      A1→F6  (accès test hors réglage)
+///
+/// Seules les transitions entre états DÉJÀ présents sont ajoutées.
+fn close_open_circuits(gemma: &mut Gemma, saved_routes: &super::SavedRoutes) {
+
+    // ── Applique les waypoints sur une transition nouvellement créée ──────────
+    fn set_wpts(gemma: &mut Gemma, id: u32, from: &str, to: &str,
+                saved_routes: &super::SavedRoutes) {
+        let key = (from.to_string(), to.to_string());
+        let wpts = saved_routes
+            .get(&key)
+            .and_then(|(w, _)| if !w.is_empty() { Some(w.clone()) } else { None })
+            .unwrap_or_else(|| super::static_gemma_waypoints(from, to));
+        if !wpts.is_empty() {
+            if let Some(t) = gemma.transitions.iter_mut().find(|t| t.id == id) {
+                t.waypoints = wpts;
+            }
+        }
+    }
+
+    // ── Transitions interdites ────────────────────────────────────────────────
+    const FORBIDDEN: &[(&str, &str)] = &[
+        ("D1", "F1"),   // court-circuit sécurité
+        ("A3", "F1"),   // saut de l'arrêt contrôlé
+        ("A7", "F1"),   // accès production depuis maintenance
+        ("A1", "F6"),   // accès test hors mode réglage
+    ];
+
+    // ── Règles drain ─────────────────────────────────────────────────────────
+    // Pour chaque état sans transition sortante : liste ordonnée de (cible, condition).
+    // La première cible existante dans le GEMMA (et non interdite) est choisie.
+    //
+    // Fondées sur les circuits autorisés :
+    //   A2→A1 (circuit 1/10), A3→A4 (circuit 3), A4→F1/A6 (circuit 3),
+    //   A5→A6 (circuit 4/6),  A7→A4/A6 (circuit 6),
+    //   D1→D2/A5 (circuit 4), D2→A5/A1 (circuit 4),
+    //   D3→F1 (circuit 5),    F2→F1 (circuit 10), F3→A1 (circuit 11),
+    //   F4→A6/A1 (circuit 8), F5→F1/F4 (circuit 9), F6→F1 (circuit 7)
+    let drain_rules: &[(&str, &[(&str, &str)])] = &[
+        ("A2", &[("A1", "Fin_cycle")]),
+        ("A3", &[("A4", "Arret_obtenu")]),               // A3→F1 interdit
+        ("A4", &[("F1", "Remise_en_marche"),
+                 ("A6", "Init_position"),
+                 ("A1", "Retour_initial")]),
+        ("A5", &[("A6", "Reprise_apres_defaut"),
+                 ("A1", "Reprise_apres_defaut")]),
+        ("A7", &[("A4", "Arret_obtenu"),                 // A7→F1 interdit
+                 ("A6", "Quitter_reglage")]),
+        ("D1", &[("D2", "EU_relachee"),                  // D1→F1 interdit
+                 ("A5", "Reset_direct")]),
+        ("D2", &[("A5", "Acquit_defaut"),
+                 ("A1", "Acquit_defaut")]),
+        ("D3", &[("F1", "Defaut_resolu"),
+                 ("A1", "Defaut_resolu")]),
+        ("F2", &[("F1", "Preparation_ok"),
+                 ("A1", "Fin_preparation")]),
+        ("F3", &[("A1", "Cloture_ok")]),
+        ("F4", &[("A6", "CI"),
+                 ("A1", "CI")]),
+        ("F5", &[("F1", "Fin_verif"),
+                 ("F4", "Passage_verif_libre"),
+                 ("A1", "Fin_verif")]),
+        ("F6", &[("F1", "Fin_test"),                     // F6 sort vers F1 ou rentre dans A7
+                 ("A7", "Retour_reglage")]),
+    ];
+
+    // ── Règles source ─────────────────────────────────────────────────────────
+    // Pour chaque état sans transition entrante : liste ordonnée de (source, condition).
+    // A1 et A6 sont exemptés (états initiaux légitimes sans entrée obligatoire).
+    //
+    // Fondées sur les circuits autorisés :
+    //   D1←F1/F6 (circuits 4/7), D2←D1/F1 (circuit 4),
+    //   D3←F1 (circuit 5),       A5←D1/D2 (circuit 4),
+    //   A7←A5 (circuit 6),       F2←A1 (circuit 10), F3←F1 (circuit 11),
+    //   F4←A1/F1 (circuit 8),    F5←A1/F1 (circuit 9),
+    //   F6←A7/F1 (circuits 7) — jamais A1→F6 (interdit)
+    let source_rules: &[(&str, &[(&str, &str)])] = &[
+        ("A5", &[("D1", "Reset_direct"),
+                 ("D2", "Acquit_defaut"),
+                 ("F1", "Defaut")]),
+        ("A7", &[("A5", "Mode_reglage"),
+                 ("A1", "Mode_reglage")]),
+        ("D1", &[("F1", "Defaut"),
+                 ("F6", "AU")]),
+        ("D2", &[("D1", "EU_relachee"),
+                 ("F1", "Defaut_direct")]),
+        ("D3", &[("F1", "Defaut_mineur")]),
+        ("F2", &[("A1", "Mode_preparation")]),
+        ("F3", &[("F1", "Mode_cloture")]),
+        ("F4", &[("A1", "Mode_verif_libre"),
+                 ("F1", "Mode_verif_libre")]),
+        ("F5", &[("A1", "Mode_verif_seq"),
+                 ("F1", "Mode_verif_seq")]),
+        // F6 : entrée depuis A7 (préféré, circuit 7) ou F1 — jamais depuis A1 (interdit)
+        ("F6", &[("A7", "Mode_test"),
+                 ("F1", "Mode_test")]),
+    ];
+
+    let is_forbidden = |from: &str, to: &str| -> bool {
+        FORBIDDEN.iter().any(|(f, t)| *f == from && *t == to)
+    };
+
+    // ── Passe 1 : états drain ─────────────────────────────────────────────────
+    loop {
+        let states_with_out: std::collections::HashSet<String> =
+            gemma.transitions.iter().map(|t| t.from.clone()).collect();
+
+        let drain = gemma.states.iter()
+            .find(|s| !states_with_out.contains(&s.id))
+            .map(|s| s.id.clone());
+
+        let Some(sid) = drain else { break };
+
+        let mut fixed = false;
+
+        if let Some((_, candidates)) = drain_rules.iter().find(|(s, _)| *s == sid.as_str()) {
+            for (target, cond) in *candidates {
+                if is_forbidden(&sid, target) { continue; }
+                if !gemma.states.iter().any(|s| s.id == *target) { continue; }
+                let id = gemma.add_transition(sid.clone(), target.to_string(), Expr::from_str(cond));
+                set_wpts(gemma, id, &sid, target, saved_routes);
+                fixed = true;
+                break;
+            }
+        }
+
+        if !fixed { break; } // état drain sans règle applicable → stabilisation
+    }
+
+    // ── Passe 2 : états source non-initiaux ───────────────────────────────────
+    loop {
+        let states_with_in: std::collections::HashSet<String> =
+            gemma.transitions.iter().map(|t| t.to.clone()).collect();
+
+        // A1 et A6 sont des états de démarrage valides sans entrée obligatoire
+        let source = gemma.states.iter()
+            .find(|s| s.id != "A1" && s.id != "A6" && !states_with_in.contains(&s.id))
+            .map(|s| s.id.clone());
+
+        let Some(sid) = source else { break };
+
+        let mut fixed = false;
+
+        if let Some((_, candidates)) = source_rules.iter().find(|(s, _)| *s == sid.as_str()) {
+            for (from, cond) in *candidates {
+                if is_forbidden(from, &sid) { continue; }
+                if !gemma.states.iter().any(|s| s.id == *from) { continue; }
+                let id = gemma.add_transition(from.to_string(), sid.clone(), Expr::from_str(cond));
+                set_wpts(gemma, id, from, &sid, saved_routes);
+                fixed = true;
+                break;
+            }
+        }
+
+        if !fixed { break; } // état source sans règle applicable → stabilisation
     }
 }
 

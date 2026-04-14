@@ -251,10 +251,12 @@ impl App {
             .min_size(Vec2::new(w - 16.0, 36.0));
 
             ui.add_space(4.0);
-            let resp = ui.add(btn);
-            if resp.clicked() {
-                self.section = sec.clone();
-            }
+            ui.vertical_centered(|ui| {
+                let resp = ui.add(btn);
+                if resp.clicked() {
+                    self.section = sec.clone();
+                }
+            });
         }
 
         ui.add_space(16.0);

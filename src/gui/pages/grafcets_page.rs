@@ -238,6 +238,7 @@ impl GrafcetsPage {
                 // Vue lisible — pas de canvas ni de toolbar
                 let mut buf = grafcet_summary(&ng.grafcet);
                 let mut open_canvas = false;
+                let mut do_layout = false;
                 egui::Frame::new()
                     .fill(egui::Color32::from_rgb(14, 20, 28))
                     .inner_margin(egui::Margin::same(12))
@@ -253,10 +254,26 @@ impl GrafcetsPage {
                                 |ui| {
                                     if ui
                                         .button(egui::RichText::new("→ Ouvrir dans le canvas").size(11.0))
-                                        .on_hover_text("Bascule vers l'éditeur graphique")
+                                        .on_hover_text("Bascule vers l'éditeur graphique (positions générées)")
                                         .clicked()
                                     {
                                         open_canvas = true;
+                                    }
+                                    ui.add_space(6.0);
+                                    if ui
+                                        .add(
+                                            egui::Button::new(
+                                                egui::RichText::new("🎨 Générer graphique")
+                                                    .size(11.0)
+                                                    .color(egui::Color32::WHITE),
+                                            )
+                                            .fill(egui::Color32::from_rgb(30, 100, 60))
+                                            .min_size(Vec2::new(145.0, 24.0)),
+                                        )
+                                        .on_hover_text("Calcule automatiquement le placement (BFS) puis ouvre le canvas")
+                                        .clicked()
+                                    {
+                                        do_layout = true;
                                     }
                                 },
                             );
@@ -273,7 +290,13 @@ impl GrafcetsPage {
                                 );
                             });
                     });
-                if open_canvas { ng.generated = false; }
+                if do_layout {
+                    auto_layout(&mut ng.grafcet);
+                    ng.generated = false;
+                    status_out = Some(format!("Layout généré : {} étapes placées", ng.grafcet.steps.len()));
+                } else if open_canvas {
+                    ng.generated = false;
+                }
             } else if let Some(editor) = self.editors.get_mut(idx) {
                 if let Some(msg) = editor.show(ui, &mut ng.grafcet) {
                     status_out = Some(msg);
@@ -423,4 +446,126 @@ fn grafcet_summary(g: &Grafcet) -> String {
     }
 
     out
+}
+
+// ── Layout automatique (BFS) ──────────────────────────────────────────────────
+
+/// Positionne automatiquement les étapes et les barres de transition d'un grafcet
+/// à partir d'un parcours BFS depuis l'étape initiale.
+///
+/// Règles visuelles (reprises des constantes de canvas.rs) :
+///   - STEP_H = 80  STEP_WICK = 30  TRANS_WICK = 25
+///   - Distance centre-à-centre entre deux étapes consécutives = 140 px
+///   - Barre de transition = from_step.y + 40 + 30 = from_step.y + 70
+///   - Plusieurs étapes au même niveau → distribuées horizontalement (X_GAP = 160)
+///   - Boucle de fermeture (to_y ≤ from_y) → route latérale gauche
+pub fn auto_layout(grafcet: &mut Grafcet) {
+    use std::collections::{HashMap, VecDeque};
+
+    if grafcet.steps.is_empty() { return; }
+
+    const X_CENTER: f32 = 400.0;
+    const X_GAP: f32    = 160.0;   // écart horizontal entre colonnes parallèles
+    const Y_START: f32  = 80.0;    // y de l'étape initiale
+    const Y_STEP: f32   = 140.0;   // distance centre-à-centre : 40+30+3+25+40 ≈ 138 → 140
+    const STEP_H2: f32  = 40.0;    // STEP_H / 2
+    const WICK: f32     = 30.0;    // STEP_WICK
+
+    // ── 1. Étape initiale ──────────────────────────────────────────────────
+    let start_id = grafcet.steps.iter()
+        .find(|s| s.kind == StepKind::Initial)
+        .or_else(|| grafcet.steps.first())
+        .map(|s| s.id)
+        .unwrap();
+
+    // ── 2. BFS → niveau de chaque étape ───────────────────────────────────
+    // Construire adjacence (sans back-edges)
+    let adj: HashMap<u32, Vec<u32>> = {
+        let mut m: HashMap<u32, Vec<u32>> = HashMap::new();
+        for t in &grafcet.transitions {
+            m.entry(t.from_step).or_default().push(t.to_step);
+        }
+        m
+    };
+
+    let mut levels: HashMap<u32, usize> = HashMap::new();
+    let mut queue: VecDeque<(u32, usize)> = VecDeque::new();
+    queue.push_back((start_id, 0));
+    while let Some((sid, lv)) = queue.pop_front() {
+        if levels.contains_key(&sid) { continue; }
+        levels.insert(sid, lv);
+        if let Some(nexts) = adj.get(&sid) {
+            for &nxt in nexts {
+                if !levels.contains_key(&nxt) {
+                    queue.push_back((nxt, lv + 1));
+                }
+            }
+        }
+    }
+    // Étapes non atteignables → niveaux supplémentaires
+    let max_lv = levels.values().max().copied().unwrap_or(0);
+    let mut extra = 1;
+    for step in &grafcet.steps {
+        if !levels.contains_key(&step.id) {
+            levels.insert(step.id, max_lv + extra);
+            extra += 1;
+        }
+    }
+
+    // ── 3. Grouper par niveau ──────────────────────────────────────────────
+    let mut by_level: HashMap<usize, Vec<u32>> = HashMap::new();
+    for (&id, &lv) in &levels {
+        by_level.entry(lv).or_default().push(id);
+    }
+    for ids in by_level.values_mut() { ids.sort(); }
+
+    let mut sorted_lvs: Vec<usize> = by_level.keys().cloned().collect();
+    sorted_lvs.sort();
+
+    // niveau → y
+    let level_y: HashMap<usize, f32> = sorted_lvs.iter().enumerate()
+        .map(|(i, &lv)| (lv, Y_START + i as f32 * Y_STEP))
+        .collect();
+
+    // ── 4. Assigner positions aux étapes ──────────────────────────────────
+    for (&lv, ids) in &by_level {
+        let y = level_y[&lv];
+        let n = ids.len();
+        for (j, &sid) in ids.iter().enumerate() {
+            let x = if n == 1 {
+                X_CENTER
+            } else {
+                let total_w = (n as f32 - 1.0) * X_GAP;
+                X_CENTER - total_w / 2.0 + j as f32 * X_GAP
+            };
+            if let Some(step) = grafcet.step_mut(sid) {
+                step.pos = [x, y];
+            }
+        }
+    }
+
+    // ── 5. Positionner les barres de transition ────────────────────────────
+    // Collecter les positions APRÈS avoir mis à jour les étapes
+    let step_pos: HashMap<u32, [f32; 2]> = grafcet.steps.iter()
+        .map(|s| (s.id, s.pos))
+        .collect();
+
+    for t in &mut grafcet.transitions {
+        let [fx, fy] = step_pos.get(&t.from_step).copied().unwrap_or([X_CENTER, Y_START]);
+        let [_tx, ty] = step_pos.get(&t.to_step).copied().unwrap_or([X_CENTER, Y_START]);
+
+        let bar_y = fy + STEP_H2 + WICK; // ancre basse de l'étape source
+        let bar_x = fx;
+
+        let is_loop = ty <= fy; // la destination est au-dessus (boucle de fermeture)
+        t.pos = [bar_x, bar_y];
+        if is_loop {
+            // Route latérale gauche pour le retour
+            t.dst_route_x = Some(X_CENTER - 80.0 - 40.0);
+            t.route_y = None;
+        } else {
+            t.dst_route_x = None;
+            t.route_y = None;
+        }
+    }
 }

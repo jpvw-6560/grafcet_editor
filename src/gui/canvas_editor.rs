@@ -40,8 +40,8 @@ pub struct CanvasEditor {
     /// Drag du handle de décrochage X (boucle en retour)
     dragging_route_x: Option<u32>,
     /// Chemin de sauvegarde propre à cet onglet
-    current_path: Option<std::path::PathBuf>,
-}
+    current_path: Option<std::path::PathBuf>,    /// Demande un fit-to-content au prochain frame
+    pub pending_fit: bool,}
 
 impl Default for CanvasEditor {
     fn default() -> Self {
@@ -58,7 +58,36 @@ impl Default for CanvasEditor {
             dragging_route_y: None,
             dragging_route_x: None,
             current_path: None,
+            pending_fit: false,
         }
+    }
+}
+
+impl CanvasEditor {
+    /// Calcule offset + zoom pour centrer tout le contenu dans `canvas_size`.
+    pub fn fit_to_content(&mut self, grafcet: &Grafcet, canvas_size: egui::Vec2) {
+        if grafcet.steps.is_empty() || canvas_size.x <= 0.0 || canvas_size.y <= 0.0 { return; }
+        let min_x = grafcet.steps.iter().map(|s| s.pos[0]).fold(f32::INFINITY,    f32::min);
+        let max_x = grafcet.steps.iter().map(|s| s.pos[0]).fold(f32::NEG_INFINITY, f32::max);
+        let min_y = grafcet.steps.iter().map(|s| s.pos[1]).fold(f32::INFINITY,    f32::min);
+        let max_y = grafcet.steps.iter().map(|s| s.pos[1]).fold(f32::NEG_INFINITY, f32::max);
+        // Bornes de contenu en coordonnées canvas (marges : routing + labels + dernière transition)
+        let left  = min_x - STEP_W / 2.0 - 90.0; // réserve pour la route de loopback
+        let right = max_x + STEP_W / 2.0 + 120.0; // réserve pour labels de conditions
+        let top   = min_y - STEP_H / 2.0 - 20.0;
+        let bot   = max_y + STEP_H / 2.0 + 80.0;  // dernière transition + mèches
+        let cw = right - left;
+        let ch = bot   - top;
+        if cw <= 0.0 || ch <= 0.0 { return; }
+        let pad  = 24.0;
+        let zoom = ((canvas_size.x - 2.0 * pad) / cw)
+            .min((canvas_size.y - 2.0 * pad) / ch)
+            .clamp(0.15, 1.5);
+        self.zoom   = zoom;
+        self.offset = egui::Vec2::new(
+            canvas_size.x / 2.0 - (left + cw / 2.0) * zoom,
+            canvas_size.y / 2.0 - (top  + ch / 2.0) * zoom,
+        );
     }
 }
 
@@ -85,7 +114,7 @@ impl CanvasEditor {
                     if ui.button("🔍+").clicked() { self.zoom = (self.zoom * 1.2).min(5.0); }
                     if ui.button("🔍-").clicked() { self.zoom = (self.zoom / 1.2).max(0.2); }
                     if ui.button("100%").clicked() { self.zoom = 1.0; self.offset = Vec2::ZERO; }
-                    if ui.button("Centrer").clicked() { self.offset = Vec2::ZERO; }
+                    if ui.button("Centrer").clicked() { self.pending_fit = true; }
                     ui.separator();
 
                     // Menu Fichier rapide
@@ -339,6 +368,11 @@ impl CanvasEditor {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(egui::Color32::from_rgb(30, 32, 36)))
             .show_inside(ui, |ui| {
+                // Auto-fit demandé (après layout automatique ou bouton Centrer)
+                if self.pending_fit {
+                    self.pending_fit = false;
+                    self.fit_to_content(grafcet, ui.available_size());
+                }
                 let resp = ui.allocate_rect(
                     ui.available_rect_before_wrap(),
                     egui::Sense::click_and_drag(),

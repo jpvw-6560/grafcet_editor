@@ -25,6 +25,8 @@ pub struct GrafcetsPage {
     generate_from_gemma: bool,
     /// Index du grafcet à supprimer (traité hors closure de panel)
     pending_delete: Option<usize>,
+    /// Pour chaque onglet : vue partagée JSON + canvas active
+    graphic_active: Vec<bool>,
 }
 
 impl Default for GrafcetsPage {
@@ -36,6 +38,7 @@ impl Default for GrafcetsPage {
             show_add_popup: false,
             generate_from_gemma: false,
             pending_delete: None,
+            graphic_active: Vec::new(),
         }
     }
 }
@@ -44,6 +47,7 @@ impl GrafcetsPage {
     /// Réinitialise les éditeurs quand le projet change.
     pub fn reset(&mut self) {
         self.editors.clear();
+        self.graphic_active.clear();
         self.active_tab = 0;
     }
 
@@ -53,6 +57,9 @@ impl GrafcetsPage {
         // Synchronise le nombre d'éditeurs avec le projet
         while self.editors.len() < project.grafcets.len() {
             self.editors.push(CanvasEditor::default());
+        }
+        while self.graphic_active.len() < project.grafcets.len() {
+            self.graphic_active.push(false);
         }
 
         // ── Barre d'onglets ────────────────────────────────────────────────
@@ -234,9 +241,71 @@ impl GrafcetsPage {
         // ── Contenu de l'onglet actif ──────────────────────────────────────
         let idx = self.active_tab.min(project.grafcets.len().saturating_sub(1));
         if let Some(ng) = project.grafcets.get_mut(idx) {
-            if ng.generated {
-                // Vue lisible — pas de canvas ni de toolbar
-                let mut buf = grafcet_summary(&ng.grafcet);
+            let is_split = self.graphic_active.get(idx).copied().unwrap_or(false);
+
+            if ng.generated && is_split {
+                // ── Vue partagée : JSON à gauche | Canvas à droite ────────
+                let buf = grafcet_summary(&ng.grafcet);
+                let mut close_graphic = false;
+
+                egui::Panel::left(egui::Id::new("json_split").with(idx))
+                    .resizable(true)
+                    .default_width(340.0)
+                    .frame(
+                        egui::Frame::new()
+                            .fill(egui::Color32::from_rgb(14, 20, 28))
+                            .inner_margin(egui::Margin::same(10)),
+                    )
+                    .show_inside(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new("JSON — depuis GEMMA")
+                                    .size(11.0)
+                                    .color(egui::Color32::from_rgb(120, 170, 220)),
+                            );
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui
+                                        .add(egui::Button::new(
+                                            egui::RichText::new("◀ JSON seul").size(11.0),
+                                        ))
+                                        .on_hover_text("Fermer la vue graphique")
+                                        .clicked()
+                                    {
+                                        close_graphic = true;
+                                    }
+                                },
+                            );
+                        });
+                        ui.add_space(4.0);
+                        let mut b = buf;
+                        egui::ScrollArea::both()
+                            .auto_shrink([false; 2])
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut b)
+                                        .code_editor()
+                                        .desired_width(f32::INFINITY)
+                                        .interactive(false),
+                                );
+                            });
+                    });
+
+                if close_graphic {
+                    if let Some(a) = self.graphic_active.get_mut(idx) { *a = false; }
+                }
+
+                // Canvas (panneau central restant)
+                if let Some(editor) = self.editors.get_mut(idx) {
+                    if let Some(msg) = editor.show(ui, &mut ng.grafcet) {
+                        status_out = Some(msg);
+                    }
+                }
+
+            } else if ng.generated {
+                // ── JSON seul (avant génération graphique) ────────────────
+                let buf = grafcet_summary(&ng.grafcet);
                 let mut open_canvas = false;
                 let mut do_layout = false;
                 egui::Frame::new()
@@ -254,7 +323,7 @@ impl GrafcetsPage {
                                 |ui| {
                                     if ui
                                         .button(egui::RichText::new("→ Ouvrir dans le canvas").size(11.0))
-                                        .on_hover_text("Bascule vers l'éditeur graphique (positions générées)")
+                                        .on_hover_text("Bascule vers l'éditeur graphique (sans mise en page auto)")
                                         .clicked()
                                     {
                                         open_canvas = true;
@@ -270,7 +339,7 @@ impl GrafcetsPage {
                                             .fill(egui::Color32::from_rgb(30, 100, 60))
                                             .min_size(Vec2::new(145.0, 24.0)),
                                         )
-                                        .on_hover_text("Calcule automatiquement le placement (BFS) puis ouvre le canvas")
+                                        .on_hover_text("Calcule le placement BFS et affiche JSON + canvas côte à côte")
                                         .clicked()
                                     {
                                         do_layout = true;
@@ -279,11 +348,12 @@ impl GrafcetsPage {
                             );
                         });
                         ui.add_space(6.0);
+                        let mut b = buf;
                         egui::ScrollArea::both()
                             .auto_shrink([false; 2])
                             .show(ui, |ui| {
                                 ui.add(
-                                    egui::TextEdit::multiline(&mut buf)
+                                    egui::TextEdit::multiline(&mut b)
                                         .code_editor()
                                         .desired_width(f32::INFINITY)
                                         .interactive(false),
@@ -292,11 +362,13 @@ impl GrafcetsPage {
                     });
                 if do_layout {
                     auto_layout(&mut ng.grafcet);
-                    ng.generated = false;
+                    if let Some(a) = self.graphic_active.get_mut(idx) { *a = true; }
+                    if let Some(ed) = self.editors.get_mut(idx) { ed.pending_fit = true; }
                     status_out = Some(format!("Layout généré : {} étapes placées", ng.grafcet.steps.len()));
                 } else if open_canvas {
                     ng.generated = false;
                 }
+
             } else if let Some(editor) = self.editors.get_mut(idx) {
                 if let Some(msg) = editor.show(ui, &mut ng.grafcet) {
                     status_out = Some(msg);
@@ -453,23 +525,25 @@ fn grafcet_summary(g: &Grafcet) -> String {
 /// Positionne automatiquement les étapes et les barres de transition d'un grafcet
 /// à partir d'un parcours BFS depuis l'étape initiale.
 ///
-/// Règles visuelles (reprises des constantes de canvas.rs) :
-///   - STEP_H = 80  STEP_WICK = 30  TRANS_WICK = 25
-///   - Distance centre-à-centre entre deux étapes consécutives = 140 px
-///   - Barre de transition = from_step.y + 40 + 30 = from_step.y + 70
-///   - Plusieurs étapes au même niveau → distribuées horizontalement (X_GAP = 160)
-///   - Boucle de fermeture (to_y ≤ from_y) → route latérale gauche
+/// Formules (STEP_H=80, STEP_WICK=30, TRANS_WICK=25) :
+///   sy_anchor = step_y + STEP_H/2 + STEP_WICK  = step_y + 70
+///   bar_y     = step_y + 70 + TRANS_WICK        = step_y + 95  (connexion haute seamless)
+///   dy_anchor = next_y - 70
+///   t_bot_y   = bar_y + TRANS_WICK              = step_y + 120
+///   → pour goes_up = false : next_y - 70 >= step_y + 120 → Y_STEP >= 190
+///   → avec Y_STEP = 190 : next_y - 70 = step_y + 120, connexion basse seamless
 pub fn auto_layout(grafcet: &mut Grafcet) {
     use std::collections::{HashMap, VecDeque};
 
     if grafcet.steps.is_empty() { return; }
 
     const X_CENTER: f32 = 400.0;
-    const X_GAP: f32    = 160.0;   // écart horizontal entre colonnes parallèles
-    const Y_START: f32  = 80.0;    // y de l'étape initiale
-    const Y_STEP: f32   = 140.0;   // distance centre-à-centre : 40+30+3+25+40 ≈ 138 → 140
-    const STEP_H2: f32  = 40.0;    // STEP_H / 2
-    const WICK: f32     = 30.0;    // STEP_WICK
+    const X_GAP: f32    = 180.0;  // écart horizontal entre colonnes parallèles
+    const Y_START: f32  = 100.0;  // y de l'étape initiale
+    const Y_STEP: f32   = 190.0;  // distance centre-à-centre = STEP_H/2 + STEP_WICK + TRANS_WICK*2 + STEP_WICK + STEP_H/2
+    const STEP_H2: f32  = 40.0;   // STEP_H / 2
+    const WICK: f32     = 30.0;   // STEP_WICK
+    const TWCK: f32     = 25.0;   // TRANS_WICK
 
     // ── 1. Étape initiale ──────────────────────────────────────────────────
     let start_id = grafcet.steps.iter()
@@ -479,7 +553,6 @@ pub fn auto_layout(grafcet: &mut Grafcet) {
         .unwrap();
 
     // ── 2. BFS → niveau de chaque étape ───────────────────────────────────
-    // Construire adjacence (sans back-edges)
     let adj: HashMap<u32, Vec<u32>> = {
         let mut m: HashMap<u32, Vec<u32>> = HashMap::new();
         for t in &grafcet.transitions {
@@ -545,7 +618,12 @@ pub fn auto_layout(grafcet: &mut Grafcet) {
     }
 
     // ── 5. Positionner les barres de transition ────────────────────────────
-    // Collecter les positions APRÈS avoir mis à jour les étapes
+    // Calculer le X minimum (pour le décrochage des boucles de retour)
+    let min_step_x = grafcet.steps.iter()
+        .map(|s| s.pos[0])
+        .fold(f32::INFINITY, f32::min);
+    let loop_route_x = min_step_x - 40.0 /*STEP_W/2*/ - 65.0;
+
     let step_pos: HashMap<u32, [f32; 2]> = grafcet.steps.iter()
         .map(|s| (s.id, s.pos))
         .collect();
@@ -554,18 +632,18 @@ pub fn auto_layout(grafcet: &mut Grafcet) {
         let [fx, fy] = step_pos.get(&t.from_step).copied().unwrap_or([X_CENTER, Y_START]);
         let [_tx, ty] = step_pos.get(&t.to_step).copied().unwrap_or([X_CENTER, Y_START]);
 
-        let bar_y = fy + STEP_H2 + WICK; // ancre basse de l'étape source
+        // Barre centrée entre ancre-basse source et ancre-haute destination
+        let bar_y = fy + STEP_H2 + WICK + TWCK; // = fy + 95
         let bar_x = fx;
 
         let is_loop = ty <= fy; // la destination est au-dessus (boucle de fermeture)
         t.pos = [bar_x, bar_y];
+        t.route_y = None;
         if is_loop {
-            // Route latérale gauche pour le retour
-            t.dst_route_x = Some(X_CENTER - 80.0 - 40.0);
-            t.route_y = None;
+            // Route latérale gauche calculée depuis le X le plus à gauche
+            t.dst_route_x = Some(loop_route_x);
         } else {
             t.dst_route_x = None;
-            t.route_y = None;
         }
     }
 }

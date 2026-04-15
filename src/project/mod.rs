@@ -13,7 +13,15 @@ use crate::gemma::Gemma;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NamedGrafcet {
     pub name: String,
+    /// Nom court symbolique affiché dans l'onglet (ex : "A1→F1").
+    /// `None` pour les grafcets manuels (nom complet affiché).
+    #[serde(default)]
+    pub short_name: Option<String>,
     pub grafcet: Grafcet,
+    /// Vrai si généré automatiquement depuis le GEMMA :
+    /// affiché en JSON pur, pas encore de canvas.
+    #[serde(default)]
+    pub generated: bool,
 }
 
 impl NamedGrafcet {
@@ -24,7 +32,7 @@ impl NamedGrafcet {
         if let Some(s) = grafcet.step_mut(id) {
             s.kind = StepKind::Initial;
         }
-        Self { name: name.into(), grafcet }
+        Self { name: name.into(), short_name: None, grafcet, generated: false }
     }
 }
 
@@ -40,17 +48,12 @@ pub struct Project {
 impl Project {
     pub fn new(name: impl Into<String>) -> Self {
         let name = name.into();
-        let mut p = Self {
+        Self {
             name: name.clone(),
             description: String::new(),
             gemma: Gemma { name: name.clone(), ..Gemma::new() },
             grafcets: Vec::new(),
-        };
-        // Trois grafcets canoniques vides
-        p.grafcets.push(NamedGrafcet::new("GS"));
-        p.grafcets.push(NamedGrafcet::new("GC"));
-        p.grafcets.push(NamedGrafcet::new("GPN"));
-        p
+        }
     }
 
     pub fn add_grafcet(&mut self, name: impl Into<String>) -> usize {

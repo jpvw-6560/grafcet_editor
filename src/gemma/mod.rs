@@ -271,3 +271,64 @@ pub fn load_saved_routes() -> SavedRoutes {
         .map(|e| ((e.from, e.to), (e.points, e.condition)))
         .collect()
 }
+
+// ── Extraction des circuits fermés ────────────────────────────────────────────
+
+/// Extrait tous les circuits fermés simples du GEMMA par DFS.
+/// Retourne chaque circuit comme liste ordonnée de state_id ; le retour vers
+/// le premier état est implicite (circuit fermé).
+/// Chaque circuit est normalisé pour démarrer par le nœud d'indice minimal
+/// dans `gemma.states`, ce qui garantit l'unicité sans rotation.
+pub fn extract_closed_circuits(gemma: &Gemma) -> Vec<Vec<String>> {
+    let state_ids: Vec<String> = gemma.states.iter().map(|s| s.id.clone()).collect();
+    let idx_map: std::collections::HashMap<String, usize> = state_ids
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.clone(), i))
+        .collect();
+
+    // Adjacence : from → [to, ...]
+    let mut adj: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for t in &gemma.transitions {
+        adj.entry(t.from.clone()).or_default().push(t.to.clone());
+    }
+
+    let mut circuits: Vec<Vec<String>> = Vec::new();
+
+    for (start_idx, start) in state_ids.iter().enumerate() {
+        let mut path = vec![start.clone()];
+        circuits_dfs(start, start, start_idx, &adj, &idx_map, &mut path, &mut circuits);
+    }
+
+    circuits
+}
+
+fn circuits_dfs(
+    current: &str,
+    start: &str,
+    start_idx: usize,
+    adj: &std::collections::HashMap<String, Vec<String>>,
+    idx_map: &std::collections::HashMap<String, usize>,
+    path: &mut Vec<String>,
+    circuits: &mut Vec<Vec<String>>,
+) {
+    // Cloner pour ne pas garder d'emprunt sur `adj` pendant la récursion
+    let neighbors: Vec<String> = adj.get(current).cloned().unwrap_or_default();
+    for next in &neighbors {
+        if next.as_str() == start && path.len() >= 2 {
+            // Boucle fermée → circuit trouvé
+            circuits.push(path.clone());
+        } else if next.as_str() != start {
+            if let Some(&ni) = idx_map.get(next.as_str()) {
+                // On ne visite que les nœuds d'indice > start_idx pour éviter
+                // de trouver le même cycle depuis plusieurs nœuds de départ.
+                if ni > start_idx && !path.contains(next) {
+                    path.push(next.clone());
+                    circuits_dfs(next, start, start_idx, adj, idx_map, path, circuits);
+                    path.pop();
+                }
+            }
+        }
+    }
+}

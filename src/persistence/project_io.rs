@@ -128,16 +128,11 @@ pub fn load_project(path: &Path) -> Result<Project, String> {
                 .map_err(|e| format!("Lecture {name}.json : {e}"))?;
             let grafcet: Grafcet = serde_json::from_str(&json)
                 .map_err(|e| format!("Parsing {name}.json : {e}"))?;
-            grafcets.push(NamedGrafcet { name, grafcet });
+            grafcets.push(NamedGrafcet { name, short_name: None, grafcet, generated: false });
         }
     }
 
-    // S'assurer que GS/GC/GPN sont présents
-    for default_name in &["GS", "GC", "GPN"] {
-        if !grafcets.iter().any(|g| g.name == *default_name) {
-            grafcets.insert(0, NamedGrafcet::new(*default_name));
-        }
-    }
+
 
     Ok(Project { name: meta.name, description: meta.description, gemma, grafcets })
 }

@@ -40,8 +40,10 @@ pub struct CanvasEditor {
     /// Drag du handle de décrochage X (boucle en retour)
     dragging_route_x: Option<u32>,
     /// Chemin de sauvegarde propre à cet onglet
-    current_path: Option<std::path::PathBuf>,    /// Demande un fit-to-content au prochain frame
-    pub pending_fit: bool,}
+    current_path: Option<std::path::PathBuf>,
+    /// Demande un fit-to-content au prochain frame
+    pub pending_fit: bool,
+}
 
 impl Default for CanvasEditor {
     fn default() -> Self {
@@ -201,7 +203,7 @@ impl CanvasEditor {
                         (t.from_step, t.to_step, t.condition.clone(), t.pos, t.route_y, t.dst_route_x)
                     });
                     if let Some((from_step, to_step, cond, pos, route_y, dst_route_x)) = trans_data {
-                        ui.label(egui::RichText::new(format!("Transition T{tid}")).strong());
+                        ui.label(egui::RichText::new(format!("Transition Y{tid}")).strong());
                         ui.separator();
 
                         ui.horizontal(|ui| {
@@ -311,7 +313,7 @@ impl CanvasEditor {
                 } else if let Some(sel_id) = self.selected_step {
                     // ── Propriétés d'une étape sélectionnée ───────────────
                     if let Some(step) = grafcet.step_mut(sel_id) {
-                        ui.label(egui::RichText::new(format!("Étape E{}", step.id)).strong());
+                        ui.label(egui::RichText::new(format!("Étape X{}", step.id)).strong());
                         ui.separator();
                         ui.horizontal(|ui| {
                             ui.label("Label :");
@@ -657,11 +659,11 @@ impl CanvasEditor {
                     if let Some(tid) = self.selected_trans {
                         grafcet.remove_transition(tid);
                         self.selected_trans = None;
-                        status_out = Some(format!("Transition T{tid} supprimée"));
+                        status_out = Some(format!("Transition Y{tid} supprimée"));
                     } else if let Some(sid) = self.selected_step {
                         grafcet.remove_step(sid);
                         self.selected_step = None;
-                        status_out = Some(format!("Étape E{sid} supprimée"));
+                        status_out = Some(format!("Étape X{sid} supprimée"));
                     }
                 }
 

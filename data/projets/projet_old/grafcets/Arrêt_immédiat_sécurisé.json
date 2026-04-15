@@ -1,0 +1,77 @@
+{
+  "steps": [
+    {
+      "id": 0,
+      "label": "F1",
+      "actions": [],
+      "kind": "Initial",
+      "pos": [
+        400.0,
+        80.0
+      ],
+      "active": false
+    },
+    {
+      "id": 1,
+      "label": "A3",
+      "actions": [],
+      "kind": "Normal",
+      "pos": [
+        400.0,
+        200.0
+      ],
+      "active": false
+    },
+    {
+      "id": 2,
+      "label": "A4",
+      "actions": [],
+      "kind": "Normal",
+      "pos": [
+        400.0,
+        320.0
+      ],
+      "active": false
+    }
+  ],
+  "transitions": [
+    {
+      "id": 0,
+      "from_step": 0,
+      "to_step": 1,
+      "condition": "Stop_immediat",
+      "pos": [
+        400.0,
+        175.0
+      ],
+      "route_y": null,
+      "dst_route_x": null
+    },
+    {
+      "id": 1,
+      "from_step": 1,
+      "to_step": 2,
+      "condition": "Arret_obtenu",
+      "pos": [
+        400.0,
+        295.0
+      ],
+      "route_y": null,
+      "dst_route_x": null
+    },
+    {
+      "id": 2,
+      "from_step": 2,
+      "to_step": 0,
+      "condition": "Remise_en_marche",
+      "pos": [
+        400.0,
+        415.0
+      ],
+      "route_y": null,
+      "dst_route_x": null
+    }
+  ],
+  "next_step_id": 3,
+  "next_trans_id": 3
+}

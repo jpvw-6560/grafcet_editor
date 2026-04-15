@@ -98,6 +98,83 @@
       "w": 117.0,
       "h": 115.0,
       "description": ""
+    },
+    {
+      "id": "A7",
+      "state_type": "Command",
+      "pos": [
+        132.0,
+        168.0
+      ],
+      "w": 98.0,
+      "h": 52.0,
+      "description": ""
+    },
+    {
+      "id": "F6",
+      "state_type": "Production",
+      "pos": [
+        649.0,
+        445.0
+      ],
+      "w": 64.0,
+      "h": 104.0,
+      "description": ""
+    },
+    {
+      "id": "F4",
+      "state_type": "Production",
+      "pos": [
+        649.0,
+        84.0
+      ],
+      "w": 64.0,
+      "h": 78.0,
+      "description": ""
+    },
+    {
+      "id": "F5",
+      "state_type": "Production",
+      "pos": [
+        649.0,
+        262.0
+      ],
+      "w": 64.0,
+      "h": 208.0,
+      "description": ""
+    },
+    {
+      "id": "F2",
+      "state_type": "Production",
+      "pos": [
+        469.0,
+        185.0
+      ],
+      "w": 47.0,
+      "h": 83.0,
+      "description": ""
+    },
+    {
+      "id": "F3",
+      "state_type": "Production",
+      "pos": [
+        540.0,
+        185.0
+      ],
+      "w": 47.0,
+      "h": 83.0,
+      "description": ""
+    },
+    {
+      "id": "D3",
+      "state_type": "Safety",
+      "pos": [
+        278.0,
+        392.0
+      ],
+      "w": 118.0,
+      "h": 47.0,
+      "description": ""
     }
   ],
   "transitions": [
@@ -397,7 +474,7 @@
       "to": "A6",
       "condition": {
         "type": "Var",
-        "args": "Reprise_apres_defaut"
+        "args": "Reset_machine"
       },
       "waypoints": [
         [
@@ -409,9 +486,482 @@
           102.5
         ]
       ]
+    },
+    {
+      "id": 14,
+      "from": "A5",
+      "to": "A7",
+      "condition": {
+        "type": "Var",
+        "args": "Mode_reglage"
+      },
+      "waypoints": [
+        [
+          136.62952,
+          229.5
+        ],
+        [
+          136.62952,
+          194.0
+        ]
+      ]
+    },
+    {
+      "id": 15,
+      "from": "A7",
+      "to": "A4",
+      "condition": {
+        "type": "Var",
+        "args": "Arret_obtenu"
+      },
+      "waypoints": [
+        [
+          181.00002,
+          170.97081
+        ],
+        [
+          254.49998,
+          171.18445
+        ]
+      ]
+    },
+    {
+      "id": 16,
+      "from": "A7",
+      "to": "A6",
+      "condition": {
+        "type": "Var",
+        "args": "Quitter_reglage"
+      },
+      "waypoints": [
+        [
+          135.23708,
+          142.0
+        ],
+        [
+          135.23708,
+          102.5
+        ]
+      ]
+    },
+    {
+      "id": 17,
+      "from": "F1",
+      "to": "F6",
+      "condition": {
+        "type": "Var",
+        "args": "Mode_test"
+      },
+      "waypoints": [
+        [
+          563.5,
+          400.19678
+        ],
+        [
+          617.0,
+          400.19678
+        ]
+      ]
+    },
+    {
+      "id": 18,
+      "from": "F6",
+      "to": "F1",
+      "condition": {
+        "type": "Var",
+        "args": "Fin_test"
+      },
+      "waypoints": [
+        [
+          617.0,
+          410.96368
+        ],
+        [
+          563.5,
+          410.96368
+        ]
+      ]
+    },
+    {
+      "id": 19,
+      "from": "F6",
+      "to": "D1",
+      "condition": {
+        "type": "Var",
+        "args": "AU"
+      },
+      "waypoints": [
+        [
+          617.0,
+          484.04764
+        ],
+        [
+          337.0,
+          484.04764
+        ]
+      ]
+    },
+    {
+      "id": 20,
+      "from": "A1",
+      "to": "F4",
+      "condition": {
+        "type": "Var",
+        "args": "Mode_verif_libre"
+      },
+      "waypoints": [
+        [
+          335.5,
+          64.32032
+        ],
+        [
+          617.0,
+          64.32032
+        ]
+      ]
+    },
+    {
+      "id": 21,
+      "from": "F1",
+      "to": "F4",
+      "condition": {
+        "type": "Var",
+        "args": "Mode_verif_libre"
+      },
+      "waypoints": [
+        [
+          563.5,
+          266.42062
+        ],
+        [
+          590.25,
+          266.42062
+        ],
+        [
+          590.25,
+          96.526985
+        ],
+        [
+          617.0,
+          96.526985
+        ]
+      ]
+    },
+    {
+      "id": 22,
+      "from": "F4",
+      "to": "A6",
+      "condition": {
+        "type": "Var",
+        "args": "CI"
+      },
+      "waypoints": [
+        [
+          643.1461,
+          45.0
+        ],
+        [
+          643.1461,
+          31.0
+        ],
+        [
+          395.8452,
+          30.751377
+        ],
+        [
+          395.8452,
+          31.061573
+        ],
+        [
+          168.11716,
+          31.310198
+        ],
+        [
+          168.11716,
+          57.5
+        ]
+      ]
+    },
+    {
+      "id": 23,
+      "from": "A1",
+      "to": "F5",
+      "condition": {
+        "type": "Var",
+        "args": "Mode_verif_seq"
+      },
+      "waypoints": [
+        [
+          335.5,
+          72.342674
+        ],
+        [
+          576.3851,
+          72.342674
+        ],
+        [
+          576.3851,
+          175.97426
+        ],
+        [
+          617.0,
+          175.97426
+        ]
+      ]
+    },
+    {
+      "id": 24,
+      "from": "F1",
+      "to": "F5",
+      "condition": {
+        "type": "Var",
+        "args": "Mode_verif_seq"
+      },
+      "waypoints": [
+        [
+          563.5,
+          344.17242
+        ],
+        [
+          617.0,
+          344.17242
+        ]
+      ]
+    },
+    {
+      "id": 25,
+      "from": "F5",
+      "to": "F1",
+      "condition": {
+        "type": "Var",
+        "args": "Fin_verif"
+      },
+      "waypoints": [
+        [
+          617.0,
+          357.07397
+        ],
+        [
+          563.5,
+          357.07397
+        ]
+      ]
+    },
+    {
+      "id": 26,
+      "from": "F5",
+      "to": "F4",
+      "condition": {
+        "type": "Var",
+        "args": "Passage_verif_libre"
+      },
+      "waypoints": [
+        [
+          650.17004,
+          158.0
+        ],
+        [
+          650.6129,
+          123.0
+        ]
+      ]
+    },
+    {
+      "id": 27,
+      "from": "A1",
+      "to": "F2",
+      "condition": {
+        "type": "Var",
+        "args": "Mode_preparation"
+      },
+      "waypoints": [
+        [
+          335.5,
+          86.18423
+        ],
+        [
+          349.5,
+          86.18423
+        ],
+        [
+          465.97073,
+          86.18423
+        ],
+        [
+          465.97073,
+          129.5
+        ],
+        [
+          465.97073,
+          143.5
+        ]
+      ]
+    },
+    {
+      "id": 28,
+      "from": "F2",
+      "to": "F1",
+      "condition": {
+        "type": "Var",
+        "args": "Préparation_ok"
+      },
+      "waypoints": [
+        [
+          462.69952,
+          226.5
+        ],
+        [
+          462.69952,
+          251.5
+        ]
+      ]
+    },
+    {
+      "id": 29,
+      "from": "F1",
+      "to": "F3",
+      "condition": {
+        "type": "Var",
+        "args": "Mode_cloture"
+      },
+      "waypoints": [
+        [
+          533.3582,
+          251.5
+        ],
+        [
+          533.3582,
+          226.5
+        ]
+      ]
+    },
+    {
+      "id": 30,
+      "from": "F3",
+      "to": "A1",
+      "condition": {
+        "type": "Var",
+        "args": "Clôture_ok"
+      },
+      "waypoints": [
+        [
+          534.8592,
+          143.5
+        ],
+        [
+          535.45,
+          129.5
+        ],
+        [
+          535.30566,
+          80.47794
+        ],
+        [
+          349.5,
+          80.47794
+        ],
+        [
+          335.5,
+          80.47794
+        ]
+      ]
+    },
+    {
+      "id": 31,
+      "from": "F1",
+      "to": "D3",
+      "condition": {
+        "type": "Var",
+        "args": "Defaut_mineur"
+      },
+      "waypoints": [
+        [
+          408.5,
+          391.8838
+        ],
+        [
+          372.49564,
+          391.8838
+        ],
+        [
+          372.49564,
+          391.50238
+        ],
+        [
+          337.0,
+          391.50238
+        ]
+      ]
+    },
+    {
+      "id": 32,
+      "from": "D3",
+      "to": "F1",
+      "condition": {
+        "type": "Var",
+        "args": "Defaut_resolu"
+      },
+      "waypoints": []
+    },
+    {
+      "id": 33,
+      "from": "D3",
+      "to": "A2",
+      "condition": {
+        "type": "Var",
+        "args": "Stop"
+      },
+      "waypoints": [
+        [
+          234.78093,
+          368.5
+        ],
+        [
+          234.78093,
+          344.5
+        ]
+      ]
+    },
+    {
+      "id": 34,
+      "from": "D3",
+      "to": "A3",
+      "condition": {
+        "type": "Var",
+        "args": "Stop_immediat"
+      },
+      "waypoints": [
+        [
+          306.8328,
+          368.5
+        ],
+        [
+          306.8328,
+          316.5
+        ]
+      ]
+    },
+    {
+      "id": 35,
+      "from": "D3",
+      "to": "D2",
+      "condition": {
+        "type": "Var",
+        "args": "Defaut_majeur"
+      },
+      "waypoints": [
+        [
+          219.0,
+          390.18463
+        ],
+        [
+          181.00002,
+          390.18463
+        ]
+      ]
     }
   ],
-  "next_trans_id": 14,
+  "next_trans_id": 36,
   "name": "projet_old",
   "description": ""
 }

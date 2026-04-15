@@ -128,7 +128,7 @@ pub fn load_project(path: &Path) -> Result<Project, String> {
                 .map_err(|e| format!("Lecture {name}.json : {e}"))?;
             let grafcet: Grafcet = serde_json::from_str(&json)
                 .map_err(|e| format!("Parsing {name}.json : {e}"))?;
-            grafcets.push(NamedGrafcet { name, short_name: None, grafcet, generated: false });
+            grafcets.push(NamedGrafcet { name, short_name: None, description: None, grafcet, generated: false });
         }
     }
 

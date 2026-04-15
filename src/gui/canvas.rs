@@ -3,8 +3,8 @@ use egui::{Color32, CornerRadius, FontId, Painter, Pos2, Rect, Stroke, Vec2};
 use crate::grafcet::{Grafcet, StepKind};
 
 // ── Constantes visuelles ──────────────────────────────────────────────────────
-pub const STEP_W: f32 = 80.0;   // corps carré
-pub const STEP_H: f32 = 80.0;   // corps carré
+pub const STEP_W: f32 = 55.0;   // corps étape
+pub const STEP_H: f32 = 50.0;   // corps étape
 pub const STEP_WICK: f32 = 30.0; // longueur des mèches d'une étape
 pub const TRANS_W: f32 = 60.0;
 pub const TRANS_H: f32 = 3.0;   // corps « nul » = simple barre
@@ -177,7 +177,7 @@ pub fn draw_transitions(
         painter.text(
             Pos2::new(tx - tw - 6.0 * zoom, ty),
             egui::Align2::RIGHT_CENTER,
-            format!("T{}", t.id),
+            format!("Y{}", t.id),
             font.clone(),
             bar_color,
         );
@@ -270,12 +270,12 @@ fn draw_one_step(
         return; // ghost : pas de texte
     }
 
-    // Numéro de l'étape
-    let font_num = FontId::monospace(14.0 * zoom);
+    // Numéro de l'étape (X0, X1…)
+    let font_num = FontId::monospace(11.0 * zoom);
     painter.text(
-        rect.min + Vec2::new(8.0 * zoom, rect.height() / 2.0),
+        rect.min + Vec2::new(5.0 * zoom, rect.height() / 2.0),
         egui::Align2::LEFT_CENTER,
-        format!("{id}"),
+        format!("X{id}"),
         font_num,
         Color32::from_rgb(180, 220, 255),
     );

@@ -17,6 +17,10 @@ pub struct NamedGrafcet {
     /// `None` pour les grafcets manuels (nom complet affiché).
     #[serde(default)]
     pub short_name: Option<String>,
+    /// Description complète du circuit (affichée en hover sur l'onglet).
+    /// Pour les grafcets générés depuis le GEMMA : "Production continue | A1→F1"
+    #[serde(default)]
+    pub description: Option<String>,
     pub grafcet: Grafcet,
     /// Vrai si généré automatiquement depuis le GEMMA :
     /// affiché en JSON pur, pas encore de canvas.
@@ -32,7 +36,7 @@ impl NamedGrafcet {
         if let Some(s) = grafcet.step_mut(id) {
             s.kind = StepKind::Initial;
         }
-        Self { name: name.into(), short_name: None, grafcet, generated: false }
+        Self { name: name.into(), short_name: None, description: None, grafcet, generated: false }
     }
 }
 

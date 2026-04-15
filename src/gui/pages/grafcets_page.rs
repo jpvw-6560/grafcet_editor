@@ -27,6 +27,8 @@ pub struct GrafcetsPage {
     pending_delete: Option<usize>,
     /// Pour chaque onglet : vue partagée JSON + canvas active
     graphic_active: Vec<bool>,
+    /// Pour chaque onglet : canvas maximisé (JSON caché)
+    canvas_only: Vec<bool>,
 }
 
 impl Default for GrafcetsPage {
@@ -39,6 +41,7 @@ impl Default for GrafcetsPage {
             generate_from_gemma: false,
             pending_delete: None,
             graphic_active: Vec::new(),
+            canvas_only: Vec::new(),
         }
     }
 }
@@ -48,6 +51,7 @@ impl GrafcetsPage {
     pub fn reset(&mut self) {
         self.editors.clear();
         self.graphic_active.clear();
+        self.canvas_only.clear();
         self.active_tab = 0;
     }
 
@@ -60,6 +64,9 @@ impl GrafcetsPage {
         }
         while self.graphic_active.len() < project.grafcets.len() {
             self.graphic_active.push(false);
+        }
+        while self.canvas_only.len() < project.grafcets.len() {
+            self.canvas_only.push(false);
         }
 
         // ── Barre d'onglets ────────────────────────────────────────────────
@@ -75,14 +82,18 @@ impl GrafcetsPage {
                         } else {
                             (egui::Color32::from_rgb(26, 37, 47), egui::Color32::from_rgb(170, 190, 210))
                         };
+                        // Affichage : short_name si présent, sinon name
                         let display = ng.short_name.as_deref().unwrap_or(&ng.name);
                         let btn = egui::Button::new(
                             egui::RichText::new(display).size(12.0).color(fg),
                         )
                         .fill(bg)
-                        .min_size(Vec2::new(70.0, 28.0));
+                        .min_size(Vec2::new(55.0, 28.0));
                         let resp = ui.add(btn);
-                        let resp = if ng.short_name.is_some() {
+                        // Hover : description (GG) > name (short_name présent) > rien
+                        let resp = if let Some(desc) = ng.description.as_deref() {
+                            resp.on_hover_text(desc)
+                        } else if ng.short_name.is_some() {
                             resp.on_hover_text(&ng.name)
                         } else {
                             resp
@@ -199,9 +210,9 @@ impl GrafcetsPage {
             if del_idx < project.grafcets.len() {
                 let name = project.grafcets[del_idx].name.clone();
                 project.grafcets.remove(del_idx);
-                if del_idx < self.editors.len() {
-                    self.editors.remove(del_idx);
-                }
+                if del_idx < self.editors.len()      { self.editors.remove(del_idx); }
+                if del_idx < self.graphic_active.len() { self.graphic_active.remove(del_idx); }
+                if del_idx < self.canvas_only.len()  { self.canvas_only.remove(del_idx); }
                 self.active_tab = self.active_tab.saturating_sub(if del_idx <= self.active_tab { 1 } else { 0 });
                 status_out = Some(format!("Grafcet « {name} » supprimé"));
             }
@@ -212,19 +223,32 @@ impl GrafcetsPage {
             self.generate_from_gemma = false;
             let circuits = crate::gemma::extract_closed_circuits(&project.gemma);
             let mut count = 0usize;
+            // Déterminer le prochain indice GG en comptant les GG déjà présents
+            let mut gg_idx = project.grafcets.iter()
+                .filter(|ng| ng.name.len() > 2
+                    && ng.name.starts_with("GG")
+                    && ng.name[2..].parse::<usize>().is_ok())
+                .count();
             for circuit in &circuits {
-                let name = circuit_name(circuit);
-                if !project.grafcets.iter().any(|ng| ng.name == name) {
-                    let grafcet = circuit_to_grafcet(&project.gemma, circuit);
-                    project.grafcets.push(NamedGrafcet {
-                        name: name.clone(),
-                        short_name: Some(circuit_short_name(circuit)),
-                        grafcet,
-                        generated: true,
-                    });
-                    self.editors.push(CanvasEditor::default());
-                    count += 1;
+                let desc = format!("{} | {}", circuit_name(circuit), circuit_short_name(circuit));
+                // Déduplication par description (identité du circuit)
+                if project.grafcets.iter().any(|ng| ng.description.as_deref() == Some(desc.as_str())) {
+                    continue;
                 }
+                gg_idx += 1;
+                let graft_name = format!("GG{gg_idx}");
+                let grafcet = circuit_to_grafcet(&project.gemma, circuit);
+                project.grafcets.push(NamedGrafcet {
+                    name:        graft_name,
+                    short_name:  None,
+                    description: Some(desc),
+                    grafcet,
+                    generated:   true,
+                });
+                self.editors.push(CanvasEditor::default());
+                self.graphic_active.push(false);
+                self.canvas_only.push(false);
+                count += 1;
             }
             status_out = if count > 0 {
                 Some(format!("{count} grafcet(s) générés depuis les circuits GEMMA"))
@@ -241,16 +265,45 @@ impl GrafcetsPage {
         // ── Contenu de l'onglet actif ──────────────────────────────────────
         let idx = self.active_tab.min(project.grafcets.len().saturating_sub(1));
         if let Some(ng) = project.grafcets.get_mut(idx) {
-            let is_split = self.graphic_active.get(idx).copied().unwrap_or(false);
+            let is_split  = self.graphic_active.get(idx).copied().unwrap_or(false);
+            let is_canvas_only = self.canvas_only.get(idx).copied().unwrap_or(false);
 
-            if ng.generated && is_split {
+            if ng.generated && is_split && is_canvas_only {
+                // ── Canvas seul (maximisé, JSON caché) ─────────────────────
+                let mut restore = false;
+                egui::Panel::top(egui::Id::new("canvas_restore_bar").with(idx))
+                    .exact_size(26.0)
+                    .frame(egui::Frame::new()
+                        .fill(egui::Color32::from_rgb(20, 30, 40))
+                        .inner_margin(egui::Margin::same(3)))
+                    .show_inside(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            if ui.add(egui::Button::new(
+                                    egui::RichText::new("◧ Vue partagée JSON+Canvas").size(11.0)
+                                        .color(egui::Color32::WHITE))
+                                .fill(egui::Color32::from_rgb(35, 60, 80))
+                                .min_size(Vec2::new(0.0, 20.0)))
+                                .on_hover_text("Restaurer le panneau JSON")
+                                .clicked()
+                            { restore = true; }
+                        });
+                    });
+                if restore { if let Some(a) = self.canvas_only.get_mut(idx) { *a = false; } }
+                if let Some(editor) = self.editors.get_mut(idx) {
+                    if let Some(msg) = editor.show(ui, &mut ng.grafcet) {
+                        status_out = Some(msg);
+                    }
+                }
+
+            } else if ng.generated && is_split {
                 // ── Vue partagée : JSON à gauche | Canvas à droite ────────
                 let buf = grafcet_summary(&ng.grafcet);
-                let mut close_graphic = false;
+                let mut close_graphic  = false;
+                let mut maximize_canvas = false;
 
                 egui::Panel::left(egui::Id::new("json_split").with(idx))
                     .resizable(true)
-                    .default_width(340.0)
+                    .default_width(320.0)
                     .frame(
                         egui::Frame::new()
                             .fill(egui::Color32::from_rgb(14, 20, 28))
@@ -266,15 +319,18 @@ impl GrafcetsPage {
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    if ui
-                                        .add(egui::Button::new(
-                                            egui::RichText::new("◀ JSON seul").size(11.0),
-                                        ))
+                                    if ui.add(egui::Button::new(
+                                            egui::RichText::new("⛶ Agrandir canvas").size(11.0))
+                                            .fill(egui::Color32::from_rgb(35, 60, 80)))
+                                        .on_hover_text("Masquer le JSON et maximiser le canvas")
+                                        .clicked()
+                                    { maximize_canvas = true; }
+                                    ui.add_space(4.0);
+                                    if ui.add(egui::Button::new(
+                                            egui::RichText::new("◀ JSON seul").size(11.0)))
                                         .on_hover_text("Fermer la vue graphique")
                                         .clicked()
-                                    {
-                                        close_graphic = true;
-                                    }
+                                    { close_graphic = true; }
                                 },
                             );
                         });
@@ -292,9 +348,8 @@ impl GrafcetsPage {
                             });
                     });
 
-                if close_graphic {
-                    if let Some(a) = self.graphic_active.get_mut(idx) { *a = false; }
-                }
+                if close_graphic   { if let Some(a) = self.graphic_active.get_mut(idx) { *a = false; } }
+                if maximize_canvas { if let Some(a) = self.canvas_only.get_mut(idx)    { *a = true; } }
 
                 // Canvas (panneau central restant)
                 if let Some(editor) = self.editors.get_mut(idx) {
@@ -534,16 +589,17 @@ fn grafcet_summary(g: &Grafcet) -> String {
 ///   → avec Y_STEP = 190 : next_y - 70 = step_y + 120, connexion basse seamless
 pub fn auto_layout(grafcet: &mut Grafcet) {
     use std::collections::{HashMap, VecDeque};
+    use crate::gui::canvas::{STEP_H, STEP_W, STEP_WICK, TRANS_WICK};
 
     if grafcet.steps.is_empty() { return; }
 
     const X_CENTER: f32 = 400.0;
     const X_GAP: f32    = 180.0;  // écart horizontal entre colonnes parallèles
     const Y_START: f32  = 100.0;  // y de l'étape initiale
-    const Y_STEP: f32   = 190.0;  // distance centre-à-centre = STEP_H/2 + STEP_WICK + TRANS_WICK*2 + STEP_WICK + STEP_H/2
-    const STEP_H2: f32  = 40.0;   // STEP_H / 2
-    const WICK: f32     = 30.0;   // STEP_WICK
-    const TWCK: f32     = 25.0;   // TRANS_WICK
+    // Y_STEP  = STEP_H/2 + STEP_WICK + TRANS_WICK*2 + STEP_WICK + STEP_H/2  (centre → centre)
+    let y_step          = STEP_H / 2.0 + STEP_WICK + TRANS_WICK + TRANS_WICK + STEP_WICK + STEP_H / 2.0;
+    // bar_y_offset = STEP_H/2 + STEP_WICK + TRANS_WICK  (centre étape → barre de transition)
+    let bar_y_offset    = STEP_H / 2.0 + STEP_WICK + TRANS_WICK;
 
     // ── 1. Étape initiale ──────────────────────────────────────────────────
     let start_id = grafcet.steps.iter()
@@ -597,7 +653,7 @@ pub fn auto_layout(grafcet: &mut Grafcet) {
 
     // niveau → y
     let level_y: HashMap<usize, f32> = sorted_lvs.iter().enumerate()
-        .map(|(i, &lv)| (lv, Y_START + i as f32 * Y_STEP))
+        .map(|(i, &lv)| (lv, Y_START + i as f32 * y_step))
         .collect();
 
     // ── 4. Assigner positions aux étapes ──────────────────────────────────
@@ -622,7 +678,7 @@ pub fn auto_layout(grafcet: &mut Grafcet) {
     let min_step_x = grafcet.steps.iter()
         .map(|s| s.pos[0])
         .fold(f32::INFINITY, f32::min);
-    let loop_route_x = min_step_x - 40.0 /*STEP_W/2*/ - 65.0;
+    let loop_route_x = min_step_x - STEP_W / 2.0 - 65.0;
 
     let step_pos: HashMap<u32, [f32; 2]> = grafcet.steps.iter()
         .map(|s| (s.id, s.pos))
@@ -633,7 +689,7 @@ pub fn auto_layout(grafcet: &mut Grafcet) {
         let [_tx, ty] = step_pos.get(&t.to_step).copied().unwrap_or([X_CENTER, Y_START]);
 
         // Barre centrée entre ancre-basse source et ancre-haute destination
-        let bar_y = fy + STEP_H2 + WICK + TWCK; // = fy + 95
+        let bar_y = fy + bar_y_offset;
         let bar_x = fx;
 
         let is_loop = ty <= fy; // la destination est au-dessus (boucle de fermeture)

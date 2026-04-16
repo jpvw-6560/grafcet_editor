@@ -371,14 +371,13 @@ impl App {
         let _ = name; // éviter warning unused
     }
 
-    /// Génère GS / GC / GPN à partir du GEMMA courant (§9-§11 du doc).
+    /// Génère GS / GC / GPN + sous-grafcets G_MANU/G_SEQ/… à partir du GEMMA courant.
     fn generate_grafcets_from_gemma(&mut self) {
         let Some(project) = self.project.as_mut() else {
             self.status = "Aucun projet ouvert".to_string();
             return;
         };
 
-        // Validation et extraction des données (libère le borrow sur project.gemma)
         if let Err(errors) = project.gemma.validate() {
             self.status = format!("GEMMA invalide : {}", errors.join(" | "));
             return;
@@ -387,76 +386,231 @@ impl App {
         use crate::gemma::StateType;
         use crate::grafcet::StepKind;
 
-        // Extraire les données nécessaires en données owned (résout le borrow conflict)
-        struct StateInfo { id: String, stype: StateType }
-        struct TransInfo { from: String, to: String, cond: String }
+        // ── Extraction owned des données GEMMA ────────────────────────────────
+        struct StateInfo { id: String, stype: StateType, action: String }
+        struct TransInfo { from: String, from_type: StateType, to: String, to_type: StateType, cond: String }
 
         let state_infos: Vec<StateInfo> = project.gemma.states.iter()
-            .map(|s| StateInfo { id: s.id.clone(), stype: s.state_type })
+            .map(|s| StateInfo { id: s.id.clone(), stype: s.state_type, action: s.action.clone() })
             .collect();
+
         let trans_infos: Vec<TransInfo> = project.gemma.transitions.iter()
-            .map(|t| TransInfo { from: t.from.clone(), to: t.to.clone(), cond: t.condition.to_display() })
+            .map(|t| {
+                let from_type = state_infos.iter().find(|s| s.id == t.from)
+                    .map_or(StateType::Command, |s| s.stype);
+                let to_type = state_infos.iter().find(|s| s.id == t.to)
+                    .map_or(StateType::Command, |s| s.stype);
+                TransInfo {
+                    from: t.from.clone(), from_type,
+                    to:   t.to.clone(),   to_type,
+                    cond: t.condition.to_display(),
+                }
+            })
             .collect();
 
-        let types = [
-            (StateType::Safety,     "GS"),
-            (StateType::Command,    "GC"),
-            (StateType::Production, "GPN"),
-        ];
-
-        for (stype, gname) in types {
-            let states: Vec<&StateInfo> = state_infos.iter()
-                .filter(|s| s.stype == stype)
-                .collect();
-
-            if states.is_empty() {
-                continue;
-            }
-
-            // Cherche ou crée le grafcet nommé (borrow mut sans conflit)
-            let idx = if let Some(i) = project.grafcets.iter().position(|g| g.name == gname) {
-                i
-            } else {
-                project.add_grafcet(gname)
-            };
-
-            let ng = &mut project.grafcets[idx];
-            ng.grafcet = crate::grafcet::Grafcet::new();
-
-            let mut id_map = std::collections::HashMap::new();
-            let x_start = 200.0_f32;
-            let y_step  = 150.0_f32;
-
-            for (i, state) in states.iter().enumerate() {
-                let pos = [x_start, 80.0 + i as f32 * y_step];
-                let sid = ng.grafcet.add_step(pos);
-                if let Some(s) = ng.grafcet.step_mut(sid) {
-                    s.label = state.id.clone();
-                    if i == 0 { s.kind = StepKind::Initial; }
+        // Noms des sous-grafcets à créer pour chaque mode de fonctionnement (F≠F1)
+        let sub_grafcet_names: Vec<String> = state_infos.iter()
+            .filter(|s| s.stype == StateType::Command && s.id != "F1")
+            .map(|s| -> String {
+                if !s.action.is_empty() {
+                    let n: String = s.action.trim().to_uppercase()
+                        .replace(' ', "_").replace('-', "_")
+                        .chars().filter(|c| c.is_alphanumeric() || *c == '_').collect();
+                    if !n.is_empty() { return format!("G_{n}"); }
                 }
-                id_map.insert(state.id.clone(), sid);
-            }
+                match s.id.as_str() {
+                    "F2" => "G_PREP".to_string(),
+                    "F3" => "G_CLOTURE".to_string(),
+                    "F4" => "G_MANU".to_string(),
+                    "F5" => "G_SEQ".to_string(),
+                    "F6" => "G_TEST".to_string(),
+                    _    => format!("G_{}", s.id),
+                }
+            })
+            .collect();
 
-            for t in &trans_infos {
-                let from_id = id_map.get(&t.from);
-                let to_id   = id_map.get(&t.to);
-                if let (Some(&f), Some(&to)) = (from_id, to_id) {
-                    let tid = ng.grafcet.add_transition(f, to);
-                    if let Some(tr) = ng.grafcet.transition_mut(tid) {
-                        // Normalise "TRUE" (valeur par défaut Expr) en "1" (convention GRAFCET)
-                        let cond = t.cond.clone();
-                        tr.condition = if cond == "TRUE" || cond.is_empty() {
-                            "1".to_string()
-                        } else {
-                            cond
-                        };
+        // ── GS : Grafcet de Sécurité ──────────────────────────────────────────
+        {
+            let mut sorted: Vec<&StateInfo> = state_infos.iter()
+                .filter(|s| s.stype == StateType::Safety).collect();
+
+            if !sorted.is_empty() {
+                // A-states en premier, puis D-states ; triés par ID dans chaque groupe
+                sorted.sort_by(|a, b| {
+                    let ga = u8::from(!a.id.starts_with('A'));
+                    let gb = u8::from(!b.id.starts_with('A'));
+                    ga.cmp(&gb).then(a.id.cmp(&b.id))
+                });
+
+                let idx = project.grafcets.iter().position(|g| g.name == "GS")
+                    .unwrap_or_else(|| project.add_grafcet("GS"));
+                let ng = &mut project.grafcets[idx];
+                ng.grafcet = crate::grafcet::Grafcet::new();
+
+                let mut id_map = std::collections::HashMap::<String, u32>::new();
+                for (i, state) in sorted.iter().enumerate() {
+                    let sid = ng.grafcet.add_step([200.0, 80.0 + i as f32 * 150.0]);
+                    if let Some(s) = ng.grafcet.step_mut(sid) {
+                        s.label = state.id.clone();
+                        if i == 0 { s.kind = StepKind::Initial; }
+                    }
+                    id_map.insert(state.id.clone(), sid);
+                }
+
+                // Transitions GEMMA impliquant un état Safety en destination
+                for t in &trans_infos {
+                    if t.to_type != StateType::Safety { continue; }
+                    let to_sid = match id_map.get(&t.to) { Some(&v) => v, None => continue };
+                    let nc = |c: &str| if c == "TRUE" || c.is_empty() { "1".to_string() } else { c.to_string() };
+
+                    if t.from_type == StateType::Safety {
+                        // Safety → Safety : transition directe
+                        if let Some(&from_sid) = id_map.get(&t.from) {
+                            let tid = ng.grafcet.add_transition(from_sid, to_sid);
+                            if let Some(tr) = ng.grafcet.transition_mut(tid) { tr.condition = nc(&t.cond); }
+                        }
+                    } else {
+                        // Cross-catégorie (ex : F1→D1 ARU) : accrochée au premier A-état
+                        // avec condition "X_{from} AND {cond}"
+                        let anchor = sorted.iter().find(|s| s.id.starts_with('A'))
+                            .and_then(|s| id_map.get(&s.id)).copied();
+                        if let Some(from_sid) = anchor {
+                            let cond = if t.cond == "TRUE" || t.cond.is_empty() {
+                                format!("X_{}", t.from)
+                            } else {
+                                format!("X_{} AND {}", t.from, t.cond)
+                            };
+                            if !ng.grafcet.transitions.iter()
+                                .any(|tr| tr.from_step == from_sid && tr.to_step == to_sid)
+                            {
+                                let tid = ng.grafcet.add_transition(from_sid, to_sid);
+                                if let Some(tr) = ng.grafcet.transition_mut(tid) { tr.condition = cond; }
+                            }
+                        }
+                    }
+                }
+
+                // ARU : de chaque A-état vers le premier D-état (si pas déjà présent)
+                let first_d = sorted.iter().find(|s| s.id.starts_with('D'))
+                    .and_then(|s| id_map.get(&s.id)).copied();
+                if let Some(d_sid) = first_d {
+                    for state in &sorted {
+                        if !state.id.starts_with('A') { continue; }
+                        if let Some(&a_sid) = id_map.get(&state.id) {
+                            if !ng.grafcet.transitions.iter()
+                                .any(|t| t.from_step == a_sid && t.to_step == d_sid)
+                            {
+                                let tid = ng.grafcet.add_transition(a_sid, d_sid);
+                                if let Some(tr) = ng.grafcet.transition_mut(tid) {
+                                    tr.condition = "ARU".to_string();
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
+        // ── GC : Grafcet de Commandes ─────────────────────────────────────────
+        {
+            let mut sorted: Vec<&StateInfo> = state_infos.iter()
+                .filter(|s| s.stype == StateType::Command).collect();
+
+            if !sorted.is_empty() {
+                sorted.sort_by_key(|s| s.id.clone());
+
+                let idx = project.grafcets.iter().position(|g| g.name == "GC")
+                    .unwrap_or_else(|| project.add_grafcet("GC"));
+                let ng = &mut project.grafcets[idx];
+                ng.grafcet = crate::grafcet::Grafcet::new();
+
+                let mut id_map = std::collections::HashMap::<String, u32>::new();
+                for (i, state) in sorted.iter().enumerate() {
+                    let sid = ng.grafcet.add_step([200.0, 80.0 + i as f32 * 150.0]);
+                    if let Some(s) = ng.grafcet.step_mut(sid) {
+                        s.label = state.id.clone();
+                        if state.id == "F1" || i == 0 { s.kind = StepKind::Initial; }
+                    }
+                    id_map.insert(state.id.clone(), sid);
+                }
+
+                // Transitions GEMMA impliquant un état Command en destination
+                for t in &trans_infos {
+                    if t.to_type != StateType::Command { continue; }
+                    let to_sid = match id_map.get(&t.to) { Some(&v) => v, None => continue };
+
+                    if t.from_type == StateType::Command {
+                        // Command → Command : transition directe
+                        if let Some(&from_sid) = id_map.get(&t.from) {
+                            let cond = if t.cond == "TRUE" || t.cond.is_empty() { "1".to_string() } else { t.cond.clone() };
+                            let tid = ng.grafcet.add_transition(from_sid, to_sid);
+                            if let Some(tr) = ng.grafcet.transition_mut(tid) { tr.condition = cond; }
+                        }
+                    } else {
+                        // Cross-catégorie (ex : A1→F1) : accrochée à F1 ou au 1er état
+                        // avec condition "X_{from} AND {cond}"
+                        let anchor = id_map.get("F1")
+                            .or_else(|| sorted.first().and_then(|s| id_map.get(&s.id)))
+                            .copied();
+                        if let Some(from_sid) = anchor {
+                            let cond = if t.cond == "TRUE" || t.cond.is_empty() {
+                                format!("X_{}", t.from)
+                            } else {
+                                format!("X_{} AND {}", t.from, t.cond)
+                            };
+                            if !ng.grafcet.transitions.iter()
+                                .any(|tr| tr.from_step == from_sid && tr.to_step == to_sid)
+                            {
+                                let tid = ng.grafcet.add_transition(from_sid, to_sid);
+                                if let Some(tr) = ng.grafcet.transition_mut(tid) { tr.condition = cond; }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── GPN : Grafcet de Production Normale ───────────────────────────────
+        {
+            let prod_states: Vec<&StateInfo> = state_infos.iter()
+                .filter(|s| s.stype == StateType::Production).collect();
+
+            if !prod_states.is_empty() {
+                let idx = project.grafcets.iter().position(|g| g.name == "GPN")
+                    .unwrap_or_else(|| project.add_grafcet("GPN"));
+                let ng = &mut project.grafcets[idx];
+                ng.grafcet = crate::grafcet::Grafcet::new();
+
+                let mut id_map = std::collections::HashMap::<String, u32>::new();
+                for (i, state) in prod_states.iter().enumerate() {
+                    let sid = ng.grafcet.add_step([200.0, 80.0 + i as f32 * 150.0]);
+                    if let Some(s) = ng.grafcet.step_mut(sid) {
+                        s.label = state.id.clone();
+                        if i == 0 { s.kind = StepKind::Initial; }
+                    }
+                    id_map.insert(state.id.clone(), sid);
+                }
+
+                for t in &trans_infos {
+                    if t.from_type != StateType::Production || t.to_type != StateType::Production { continue; }
+                    if let (Some(&f), Some(&to)) = (id_map.get(&t.from), id_map.get(&t.to)) {
+                        let cond = if t.cond == "TRUE" || t.cond.is_empty() { "1".to_string() } else { t.cond.clone() };
+                        let tid = ng.grafcet.add_transition(f, to);
+                        if let Some(tr) = ng.grafcet.transition_mut(tid) { tr.condition = cond; }
+                    }
+                }
+            }
+        }
+
+        // ── Sous-grafcets G_MANU / G_SEQ / … ─────────────────────────────────
+        for name in sub_grafcet_names {
+            if project.grafcets.iter().all(|g| g.name != name) {
+                project.add_grafcet(&name);
+            }
+        }
+
         self.grafcets_page.reset();
-        self.status = "Grafcets GS / GC / GPN générés depuis le GEMMA ✓".to_string();
+        self.status = "Grafcets GS / GC / GPN + sous-grafcets générés depuis le GEMMA ✓".to_string();
         self.section = Section::Grafcets;
     }
 }

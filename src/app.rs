@@ -395,10 +395,7 @@ impl App {
         use crate::grafcet::StepKind;
         use crate::project::NamedGrafcet;
 
-        // ── 1. Conserver uniquement les grafcets utilisateur ─────────────────
-        let user_grafcets: Vec<NamedGrafcet> = project.grafcets.drain(..)
-            .filter(|ng| !ng.generated)
-            .collect();
+        // ── 1. Supprimer TOUS les grafcets existants ─────────────────────────
         project.grafcets.clear();
 
         // ── Extraction owned des données GEMMA ───────────────────────────────
@@ -430,26 +427,6 @@ impl App {
                 s.actions.push("— pas encore implémenté —".to_string());
             }
             ng
-        }
-
-        /// Nom du grafcet pour un état Command : utilise l'action si renseignée,
-        /// sinon les noms GEMMA standard.
-        fn f_state_name(id: &str, action: &str) -> String {
-            if !action.is_empty() {
-                let n: String = action.trim().to_uppercase()
-                    .replace(' ', "_").replace('-', "_")
-                    .chars().filter(|c| c.is_alphanumeric() || *c == '_').collect();
-                if !n.is_empty() { return format!("G_{n}"); }
-            }
-            match id {
-                "F1" => "GPN".to_string(),
-                "F2" => "G_PREP".to_string(),
-                "F3" => "G_CLOTURE".to_string(),
-                "F4" => "G_MANU".to_string(),
-                "F5" => "G_SEQ".to_string(),
-                "F6" => "G_TEST".to_string(),
-                _    => format!("G_{id}"),
-            }
         }
 
         // ── 2. GS : Grafcet de Sécurité — génération complète ───────────────
@@ -544,25 +521,12 @@ impl App {
             project.grafcets.push(stub("GC"));
         }
 
-        // ── 4. Grafcets des états Command (F1..F6) — stubs ──────────────────
-        // Un grafcet par état Command, dans l'ordre alphabétique
-        let mut cmd_states: Vec<&StateInfo> = state_infos.iter()
-            .filter(|s| s.stype == StateType::Command).collect();
-        cmd_states.sort_by_key(|s| s.id.clone());
+        // ── 4. Réintégrer les grafcets utilisateur à la fin ——— SUPPRIMÉ ────
+        // Les grafcets F1-F6 (GPN, G_PREP, etc.) sont créés manuellement
+        // par l'utilisateur via "+ Nouveau".
 
-        for state in cmd_states {
-            let name = f_state_name(&state.id, &state.action);
-            project.grafcets.push(stub(&name));
-        }
-
-        // ── 5. Réintégrer les grafcets utilisateur à la fin ──────────────────
-        project.grafcets.extend(user_grafcets);
-
-        let nb_f = state_infos.iter().filter(|s| s.stype == StateType::Command).count();
         self.grafcets_page.reset();
-        self.status = format!(
-            "Grafcets regénérés : GS (complet) + GC (stub) + {} grafcets F (stubs) ✓", nb_f
-        );
+        self.status = "Grafcets regénérés : GS (complet) + GC ✓".to_string();
         self.section = Section::Grafcets;
     }
 }

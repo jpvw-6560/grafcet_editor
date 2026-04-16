@@ -82,6 +82,10 @@ pub struct GemmaPage {
     dragging_seg: Option<DragSegment>,
     // Dialogue de confirmation de réinitialisation
     confirm_reset: bool,
+    // ── Simulation ─────────────────────────────────────────────────────────
+    sim_active:  bool,
+    sim_state:   String,              // ID de l'état actif courant
+    sim_history: Vec<String>,         // Log : "A1 →[cond]→ F1"
 }
 
 impl Default for GemmaPage {
@@ -105,6 +109,9 @@ impl Default for GemmaPage {
             confirm_reset: false,
             dragging_ep: None,
             dragging_seg: None,
+            sim_active:  false,
+            sim_state:   String::new(),
+            sim_history: Vec::new(),
         }
     }
 }
@@ -173,6 +180,46 @@ impl GemmaPage {
                         }
                     }
 
+                    ui.separator();
+
+                    // ── Bouton Simulation ─────────────────────────────────
+                    if self.sim_active {
+                        if ui.add(egui::Button::new(
+                            egui::RichText::new("⏹ Arrêter sim.").size(12.0)
+                        ).fill(Color32::from_rgb(150, 40, 40))).clicked() {
+                            self.sim_active  = false;
+                            self.sim_state   = String::new();
+                            self.sim_history.clear();
+                            status_out = Some("Simulation arrêtée".to_string());
+                        }
+                        ui.label(
+                            egui::RichText::new(format!("⬤ {}", self.sim_state))
+                                .size(12.0).strong()
+                                .color(Color32::from_rgb(255, 220, 60))
+                        );
+                    } else {
+                        if ui.add(egui::Button::new(
+                            egui::RichText::new("▶ Simuler").size(12.0)
+                        ).fill(Color32::from_rgb(30, 100, 50))).clicked() {
+                            // Démarrer depuis l'état initial (A1 ou premier état)
+                            let start = gemma.states.iter()
+                                .find(|s| s.id == "A1")
+                                .or_else(|| gemma.states.first())
+                                .map(|s| s.id.clone())
+                                .unwrap_or_default();
+                            self.sim_active  = true;
+                            self.sim_state   = start.clone();
+                            self.sim_history.clear();
+                            self.sim_history.push(format!("▶ Départ : {start}"));
+                            // Désactiver les outils d'édition
+                            self.selected_state = None;
+                            self.selected_trans = None;
+                            self.editing_cond   = None;
+                            self.editing_action = None;
+                            status_out = Some(format!("Simulation démarrée — état actif : {start}"));
+                        }
+                    }
+
                     // Indice outil courant
                     if self.tool == GemmaTool::AddTransition {
                         ui.separator();
@@ -202,7 +249,7 @@ impl GemmaPage {
                 });
         }
 
-        // ── Propriétés (droite) ─────────────────────────────────────────────
+        // ── Propriétés / Simulation (droite) ───────────────────────────────
         egui::Panel::right("gemma_props")
             .min_size(200.0)
             .resizable(true)
@@ -210,9 +257,15 @@ impl GemmaPage {
                 .fill(Color32::from_rgb(22, 32, 42))
                 .inner_margin(egui::Margin::same(8)))
             .show_inside(ui, |ui| {
-                ui.heading("Propriétés");
-                ui.separator();
-                self.draw_props(ui, gemma);
+                if self.sim_active {
+                    if let Some(msg) = self.draw_simulation(ui, gemma) {
+                        status_out = Some(msg);
+                    }
+                } else {
+                    ui.heading("Propriétés");
+                    ui.separator();
+                    self.draw_props(ui, gemma);
+                }
             });
 
         // ── Canvas ─────────────────────────────────────────────────────────
@@ -332,7 +385,35 @@ impl GemmaPage {
                 // ── États ─────────────────────────────────────────────────
                 for state in &gemma.states {
                     let is_sel = self.selected_state.as_deref() == Some(&state.id);
-                    draw_gemma_node(&painter, state, self.offset, self.zoom, origin, is_sel);
+                    let is_sim_active = self.sim_active && self.sim_state == state.id;
+                    draw_gemma_node(&painter, state, self.offset, self.zoom, origin,
+                                    is_sel, is_sim_active);
+                }
+
+                // ── Indicateurs de transitions disponibles (mode simulation) ─
+                if self.sim_active {
+                    for t in &gemma.transitions {
+                        if t.from != self.sim_state { continue; }
+                        if t.waypoints.is_empty() { continue; }
+                        // Dessiner un losange vert clignotant sur la flèche
+                        if let Some(dst_state) = gemma.state(&t.to) {
+                            let sp = canvas_to_screen(
+                                dst_state.pos, self.offset, self.zoom, origin);
+                            let eff_h = if dst_state.h > 0.0 { dst_state.h } else { NODE_H };
+                            let arrow_tip = Pos2::new(sp.x, sp.y - eff_h * self.zoom / 2.0 - 8.0);
+                            let r = 7.0;
+                            painter.add(egui::Shape::convex_polygon(
+                                vec![
+                                    Pos2::new(arrow_tip.x, arrow_tip.y - r),
+                                    Pos2::new(arrow_tip.x + r, arrow_tip.y),
+                                    Pos2::new(arrow_tip.x, arrow_tip.y + r),
+                                    Pos2::new(arrow_tip.x - r, arrow_tip.y),
+                                ],
+                                Color32::from_rgba_unmultiplied(60, 200, 80, 210),
+                                egui::Stroke::new(1.5, Color32::from_rgb(120, 255, 140)),
+                            ));
+                        }
+                    }
                 }
 
                 // (Handles de déplacement supprimés — édition de position inhibée)
@@ -439,6 +520,24 @@ impl GemmaPage {
                     if let Some(mp) = ptr {
                         let cv = to_canvas(mp, origin, self.offset, self.zoom);
 
+                        // Mode simulation : clic sur un état accessible
+                        if self.sim_active {
+                            if let Some(sid) = hit_node(cv, &gemma.states) {
+                                let reachable = gemma.transitions.iter()
+                                    .any(|t| t.from == self.sim_state && t.to == sid);
+                                if reachable {
+                                    let cond = gemma.transitions.iter()
+                                        .find(|t| t.from == self.sim_state && t.to == sid)
+                                        .map(|t| t.condition.to_display())
+                                        .unwrap_or_default();
+                                    let entry = format!("{} →[{}]→ {}", self.sim_state, cond, sid);
+                                    self.sim_history.push(entry);
+                                    status_out = Some(format!("Transition : {} → {}", self.sim_state, sid));
+                                    self.sim_state = sid;
+                                }
+                            }
+                        } else {
+
                         match self.tool {
                             GemmaTool::Select => {
                                 // Sélection uniquement (déplacements inhibés)
@@ -538,6 +637,7 @@ impl GemmaPage {
                             }
                             _ => {}
                         }
+                        } // fin else !sim_active
                     }
                 }
                 // Fermer ctx_menu aussi sur clic gauche n'importe où (sauf boutons du menu)
@@ -648,6 +748,128 @@ impl GemmaPage {
                     self.zoom = (self.zoom * f).clamp(0.2, 4.0);
                 }
             });
+
+        status_out
+    }
+
+    fn draw_simulation(&mut self, ui: &mut egui::Ui, gemma: &mut Gemma) -> Option<String> {
+        let mut status_out: Option<String> = None;
+
+        ui.label(
+            egui::RichText::new("▶ Simulation GEMMA")
+                .size(13.0).strong()
+                .color(Color32::from_rgb(255, 220, 60))
+        );
+        ui.separator();
+        ui.add_space(4.0);
+
+        // État actif
+        let state_info = gemma.state(&self.sim_state)
+            .map(|s| (s.description.clone(), s.action.clone(), s.state_type));
+        if let Some((desc, action, stype)) = &state_info {
+            ui.label(
+                egui::RichText::new("État actif :").size(11.0)
+                    .color(Color32::from_rgb(140, 160, 180))
+            );
+            ui.label(
+                egui::RichText::new(format!("⬤  {}", self.sim_state))
+                    .size(14.0).strong().color(stype.color())
+            );
+            if !desc.is_empty() {
+                ui.label(
+                    egui::RichText::new(desc).size(11.0)
+                        .color(Color32::from_rgb(160, 200, 240))
+                );
+            }
+            if !action.is_empty() {
+                ui.add_space(2.0);
+                ui.label(
+                    egui::RichText::new(format!("⚙ {action}"))
+                        .size(11.0).color(Color32::from_rgb(80, 220, 100))
+                );
+            }
+        }
+
+        // Transitions disponibles
+        let avail: Vec<(u32, String, String)> = gemma.transitions.iter()
+            .filter(|t| t.from == self.sim_state)
+            .map(|t| (t.id, t.to.clone(), t.condition.to_display()))
+            .collect();
+
+        ui.add_space(8.0);
+        ui.separator();
+        ui.add_space(4.0);
+
+        if avail.is_empty() {
+            ui.label(
+                egui::RichText::new("Aucune transition disponible\n(état terminal)")
+                    .size(11.0).italics().color(Color32::from_rgb(200, 100, 80))
+            );
+        } else {
+            ui.label(
+                egui::RichText::new("Transitions disponibles :")
+                    .size(11.0).color(Color32::from_rgb(140, 160, 180))
+            );
+            ui.add_space(4.0);
+
+            let mut fire: Option<(String, String)> = None;
+            for (_, to_id, cond) in &avail {
+                let has_cond = cond != "TRUE" && cond != "FALSE";
+                ui.add_space(3.0);
+                let btn_label = format!("→  {to_id}");
+                if ui.add(
+                    egui::Button::new(
+                        egui::RichText::new(&btn_label).size(12.0).strong()
+                    )
+                    .fill(Color32::from_rgb(30, 70, 35))
+                    .min_size(Vec2::new(ui.available_width(), 0.0))
+                ).on_hover_text(
+                    if has_cond { format!("Condition : {cond}") }
+                    else { "Transition libre (aucune condition)".to_string() }
+                ).clicked() {
+                    fire = Some((to_id.clone(), cond.clone()));
+                }
+                if has_cond {
+                    ui.label(
+                        egui::RichText::new(format!("  [{cond}]"))
+                            .size(10.0).color(Color32::from_rgb(180, 140, 255))
+                    );
+                }
+            }
+
+            if let Some((to_id, cond)) = fire {
+                let entry = format!("{} →[{}]→ {}", self.sim_state, cond, to_id);
+                self.sim_history.push(entry);
+                status_out = Some(format!("Transition : {} → {}", self.sim_state, to_id));
+                self.sim_state = to_id;
+            }
+        }
+
+        // Log
+        if !self.sim_history.is_empty() {
+            ui.add_space(8.0);
+            ui.separator();
+            ui.label(
+                egui::RichText::new("Historique :").size(11.0)
+                    .color(Color32::from_rgb(140, 160, 180))
+            );
+            egui::ScrollArea::vertical()
+                .max_height(120.0)
+                .stick_to_bottom(true)
+                .show(ui, |ui| {
+                    for entry in &self.sim_history {
+                        ui.label(
+                            egui::RichText::new(entry).size(10.0)
+                                .color(Color32::from_rgb(150, 170, 190))
+                        );
+                    }
+                });
+            if ui.add(egui::Button::new(
+                    egui::RichText::new("🗑 Effacer historique").size(10.0))
+                .fill(Color32::from_rgb(40, 30, 30))).clicked() {
+                self.sim_history.clear();
+            }
+        }
 
         status_out
     }
@@ -1514,6 +1736,7 @@ fn draw_gemma_node(
     zoom: f32,
     origin: Pos2,
     selected: bool,
+    sim_active: bool,
 ) {
     let eff_w = if state.w > 0.0 { state.w } else { NODE_W };
     let eff_h = if state.h > 0.0 { state.h } else { NODE_H };
@@ -1525,8 +1748,30 @@ fn draw_gemma_node(
 
     let base = state.state_type.color();
     let bg = Color32::from_rgba_unmultiplied(base.r() / 2, base.g() / 2, base.b() / 2, 240);
-    let border_color = if selected { Color32::from_rgb(241, 196, 15) } else { base };
+    let border_color = if sim_active  { Color32::from_rgb(255, 220, 60) }
+                       else if selected { Color32::from_rgb(241, 196, 15) }
+                       else             { base };
     let rounding = CornerRadius::same((4.0 * zoom).round().clamp(0.0, 255.0) as u8);
+
+    // Aura dorée pour l'état actif en simulation
+    if sim_active {
+        let aura = 6.0 * zoom;
+        let aura_rect = Rect::from_min_max(
+            Pos2::new(cx - hw - aura, cy - hh - aura),
+            Pos2::new(cx + hw + aura, cy + hh + aura),
+        );
+        painter.rect_filled(
+            aura_rect,
+            CornerRadius::same((7.0 * zoom).round().clamp(0.0, 255.0) as u8),
+            Color32::from_rgba_unmultiplied(255, 220, 60, 55),
+        );
+        painter.rect_stroke(
+            aura_rect,
+            CornerRadius::same((7.0 * zoom).round().clamp(0.0, 255.0) as u8),
+            Stroke::new(2.5 * zoom, Color32::from_rgb(255, 220, 60)),
+            egui::StrokeKind::Outside,
+        );
+    }
 
     painter.rect_filled(rect, rounding, bg);
     painter.rect_stroke(rect, rounding,

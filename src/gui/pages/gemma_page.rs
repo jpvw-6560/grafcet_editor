@@ -791,10 +791,12 @@ impl GemmaPage {
         }
 
         // Transitions disponibles
-        let avail: Vec<(u32, String, String)> = gemma.transitions.iter()
+        let mut avail: Vec<(u32, String, String)> = gemma.transitions.iter()
             .filter(|t| t.from == self.sim_state)
             .map(|t| (t.id, t.to.clone(), t.condition.to_display()))
             .collect();
+        avail.sort_by(|a, b| a.1.cmp(&b.1));
+        avail.sort_by(|a, b| a.1.cmp(&b.1));
 
         ui.add_space(8.0);
         ui.separator();

@@ -106,6 +106,10 @@ pub struct GemmaState {
     /// Description courte
     #[serde(default)]
     pub description: String,
+    /// Action associée à cet état (texte affiché en vert sur le canvas).
+    /// Ex : "Dosage et malaxage" pour F1.
+    #[serde(default)]
+    pub action: String,
 }
 
 // ── Transition GEMMA (§2) ─────────────────────────────────────────────────────

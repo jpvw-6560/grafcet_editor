@@ -12,6 +12,7 @@ use egui::Vec2;
 use crate::gui::pages::gemma_page::GemmaPage;
 use crate::gui::pages::grafcets_page::GrafcetsPage;
 use crate::gui::pages::project_page::ProjectPage;
+use crate::gui::pages::doc_page::DocPage;
 use crate::project::Project;
 
 // ── Section active ────────────────────────────────────────────────────────────
@@ -21,6 +22,7 @@ pub enum Section {
     Project,
     Gemma,
     Grafcets,
+    Doc,
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
@@ -35,6 +37,7 @@ pub struct App {
     pub project_page: ProjectPage,
     pub gemma_page: GemmaPage,
     pub grafcets_page: GrafcetsPage,
+    pub doc_page: DocPage,
 }
 
 impl Default for App {
@@ -47,6 +50,7 @@ impl Default for App {
             project_page: ProjectPage::default(),
             gemma_page: GemmaPage::default(),
             grafcets_page: GrafcetsPage::default(),
+            doc_page: DocPage::default(),
         }
     }
 }
@@ -180,6 +184,21 @@ impl eframe::App for App {
                             });
                         }
                     }
+                    Section::Doc => {
+                        if let Some(project) = self.project.as_mut() {
+                            if self.doc_page.show(ui, &mut project.documentation) {
+                                self.save_project();
+                            }
+                        } else {
+                            ui.centered_and_justified(|ui| {
+                                ui.label(
+                                    egui::RichText::new("Aucun projet ouvert.\nCréez ou chargez un projet.")
+                                        .size(14.0)
+                                        .color(egui::Color32::from_rgb(100, 120, 140)),
+                                );
+                            });
+                        }
+                    }
                 }
             });
     }
@@ -225,9 +244,10 @@ impl App {
 
         // Boutons de section
         let buttons: &[(&str, Section)] = &[
-            ("📁  Projet",   Section::Project),
-            ("🔷  GEMMA",    Section::Gemma),
-            ("📊  Grafcets", Section::Grafcets),
+            ("📁  Projet",        Section::Project),
+            ("🔷  GEMMA",         Section::Gemma),
+            ("📊  Grafcets",      Section::Grafcets),
+            ("📝  Documentation", Section::Doc),
         ];
 
         for (label, sec) in buttons {

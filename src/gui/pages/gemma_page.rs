@@ -64,9 +64,10 @@ pub struct GemmaPage {
     zoom:       f32,
     dragging:   Option<String>,
     drag_offset: Vec2,
-    selected_state: Option<String>,
-    selected_trans: Option<u32>,
-    editing_cond:   Option<(u32, String)>,
+    selected_state:  Option<String>,
+    selected_trans:  Option<u32>,
+    editing_cond:    Option<(u32, String)>,
+    editing_action:  Option<String>,
     show_questionnaire: bool,
     questionnaire:      Questionnaire,
     pub pending_fit:  bool,
@@ -94,6 +95,7 @@ impl Default for GemmaPage {
             selected_state: None,
             selected_trans: None,
             editing_cond:   None,
+            editing_action: None,
             show_questionnaire: false,
             questionnaire: Questionnaire::load(),
             pending_fit:  false,
@@ -448,11 +450,14 @@ impl GemmaPage {
                                         self.selected_trans = Some(tid);
                                         self.selected_state = None;
                                         self.editing_cond   = None;
+                                        self.editing_action = None;
                                     }
-                                } else if hit_node(cv, &gemma.states).is_some() {
-                                    // clic sur état : désélectionner flèche
+                                } else if let Some(sid) = hit_node(cv, &gemma.states) {
+                                    // clic sur état : sélectionner l'état
                                     self.selected_trans  = None;
-                                    self.selected_state  = None;
+                                    self.editing_cond    = None;
+                                    self.editing_action  = None;
+                                    self.selected_state  = Some(sid);
                                 } else {
                                     self.selected_state = None;
                                     self.selected_trans = None;
@@ -713,6 +718,65 @@ impl GemmaPage {
                     self.editing_cond   = None;
                     self.needs_save = true;
                 }
+            }
+        } else if let Some(sid) = self.selected_state.clone() {
+            // ── État sélectionné ─────────────────────────────────────────
+            let state_data = gemma.state(&sid)
+                .map(|s| (s.description.clone(), s.action.clone(), s.state_type));
+            if let Some((desc, action, stype)) = state_data {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(format!("État  {sid}"))
+                        .strong().size(13.0).color(stype.color())
+                );
+                if !desc.is_empty() {
+                    ui.label(
+                        egui::RichText::new(&desc)
+                            .size(11.0).color(Color32::from_rgb(160, 200, 240))
+                    );
+                }
+                ui.separator();
+                ui.add_space(4.0);
+                if !action.is_empty() {
+                    ui.label(
+                        egui::RichText::new("Action actuelle :")
+                            .size(11.0).color(Color32::from_rgb(140, 160, 180))
+                    );
+                    ui.label(
+                        egui::RichText::new(&action)
+                            .size(12.0).strong().color(Color32::from_rgb(80, 220, 100))
+                    );
+                } else {
+                    ui.label(
+                        egui::RichText::new("Aucune action définie")
+                            .size(11.0).italics().color(Color32::from_rgb(120, 130, 140))
+                    );
+                }
+                ui.add_space(8.0);
+                ui.label(
+                    egui::RichText::new("Nouvelle action :")
+                        .size(11.0).color(Color32::from_rgb(140, 160, 180))
+                );
+                let ea = self.editing_action.get_or_insert(action.clone());
+                ui.add(egui::TextEdit::singleline(ea)
+                    .hint_text("Ex : Dosage et malaxage")
+                    .desired_width(f32::INFINITY));
+                ui.add_space(4.0);
+                ui.horizontal(|ui| {
+                    if ui.add(egui::Button::new("✔ Appliquer")
+                            .fill(Color32::from_rgb(39, 100, 58))).clicked() {
+                        if let Some(s) = self.editing_action.take() {
+                            if let Some(st) = gemma.state_mut(&sid) { st.action = s; }
+                        }
+                        self.needs_save = true;
+                    }
+                    if ui.add(egui::Button::new("✕ Effacer")
+                            .fill(Color32::from_rgb(80, 30, 30))).clicked() {
+                        if let Some(st) = gemma.state_mut(&sid) { st.action.clear(); }
+                        self.editing_action = None;
+                        self.needs_save = true;
+                    }
+                });
             }
         } else {
             ui.label(egui::RichText::new(
@@ -1455,6 +1519,18 @@ fn draw_gemma_node(
                 );
             }
         }
+    }
+
+    // ── Action associée (texte vert, centré en bas du rectangle) ──────────
+    if !state.action.is_empty() {
+        let action_y = cy + hh - margin - font_sz * 0.55;
+        painter.text(
+            Pos2::new(cx, action_y),
+            egui::Align2::CENTER_BOTTOM,
+            &state.action,
+            FontId::proportional(font_sz * 0.95),
+            Color32::from_rgb(80, 220, 100),
+        );
     }
 }
 

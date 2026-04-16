@@ -184,6 +184,7 @@ impl Questionnaire {
                     w,
                     h,
                     description: String::new(),
+                    action: String::new(),
                 });
             } else {
                 // Grille de fallback pour états non-canoniques
@@ -197,6 +198,7 @@ impl Questionnaire {
                     w: 0.0,
                     h: 0.0,
                     description: String::new(),
+                    action: String::new(),
                 });
             }
         }

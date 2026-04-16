@@ -36,6 +36,8 @@ pub fn project_dir(name: &str) -> PathBuf {
 struct ProjectMeta {
     name: String,
     description: String,
+    #[serde(default)]
+    documentation: String,
 }
 
 // ── Sauvegarde ─────────────────────────────────────────────────────────────────
@@ -49,7 +51,7 @@ pub fn save_project(project: &Project, dir: &Path) -> Result<(), String> {
         .map_err(|e| format!("Création grafcets/ : {e}"))?;
 
     // Métadonnées
-    let meta = ProjectMeta { name: project.name.clone(), description: project.description.clone() };
+    let meta = ProjectMeta { name: project.name.clone(), description: project.description.clone(), documentation: project.documentation.clone() };
     let json = serde_json::to_string_pretty(&meta)
         .map_err(|e| format!("Sérialisation meta : {e}"))?;
     std::fs::write(dir.join("project.json"), json)
@@ -134,5 +136,5 @@ pub fn load_project(path: &Path) -> Result<Project, String> {
 
 
 
-    Ok(Project { name: meta.name, description: meta.description, gemma, grafcets })
+    Ok(Project { name: meta.name, description: meta.description, documentation: meta.documentation, gemma, grafcets })
 }

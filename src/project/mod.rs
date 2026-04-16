@@ -45,6 +45,9 @@ impl NamedGrafcet {
 pub struct Project {
     pub name: String,
     pub description: String,
+    /// Documentation libre du projet (page Markdown).
+    #[serde(default)]
+    pub documentation: String,
     pub gemma: Gemma,
     pub grafcets: Vec<NamedGrafcet>,
 }
@@ -55,6 +58,7 @@ impl Project {
         Self {
             name: name.clone(),
             description: String::new(),
+            documentation: String::new(),
             gemma: Gemma { name: name.clone(), ..Gemma::new() },
             grafcets: Vec::new(),
         }

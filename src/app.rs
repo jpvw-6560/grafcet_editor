@@ -183,6 +183,11 @@ impl eframe::App for App {
                                 );
                             });
                         }
+                        // Signal différé hors borrow de project
+                        if self.grafcets_page.needs_full_generate {
+                            self.grafcets_page.needs_full_generate = false;
+                            self.generate_grafcets_from_gemma();
+                        }
                     }
                     Section::Doc => {
                         if let Some(project) = self.project.as_mut() {
@@ -371,7 +376,8 @@ impl App {
         let _ = name; // éviter warning unused
     }
 
-    /// Génère GS / GC / GPN + sous-grafcets G_MANU/G_SEQ/… à partir du GEMMA courant.
+    /// Regénère TOUS les grafcets issus du GEMMA (GS, GC, GPN + G_* + GG circuits).
+    /// Les grafcets créés manuellement (generated=false) sont conservés.
     fn generate_grafcets_from_gemma(&mut self) {
         let Some(project) = self.project.as_mut() else {
             self.status = "Aucun projet ouvert".to_string();
@@ -385,8 +391,16 @@ impl App {
 
         use crate::gemma::StateType;
         use crate::grafcet::StepKind;
+        use crate::gui::pages::grafcets_page::{circuit_to_grafcet, circuit_name, circuit_short_name};
+        use crate::project::NamedGrafcet;
 
-        // ── Extraction owned des données GEMMA ────────────────────────────────
+        // ── 1. Conserver uniquement les grafcets utilisateur (generated=false) ────
+        let user_grafcets: Vec<NamedGrafcet> = project.grafcets.drain(..)
+            .filter(|ng| !ng.generated)
+            .collect();
+        project.grafcets.clear(); // au cas où drain(..) ne l'a pas vidé
+
+        // ── Extraction owned des données GEMMA ───────────────────────────────
         struct StateInfo { id: String, stype: StateType, action: String }
         struct TransInfo { from: String, from_type: StateType, to: String, to_type: StateType, cond: String }
 
@@ -408,7 +422,7 @@ impl App {
             })
             .collect();
 
-        // Noms des sous-grafcets à créer pour chaque mode de fonctionnement (F≠F1)
+        // Noms des sous-grafcets G_* à créer pour chaque mode de fonctionnement (F≠F1)
         let sub_grafcet_names: Vec<String> = state_infos.iter()
             .filter(|s| s.stype == StateType::Command && s.id != "F1")
             .map(|s| -> String {
@@ -429,22 +443,20 @@ impl App {
             })
             .collect();
 
-        // ── GS : Grafcet de Sécurité ──────────────────────────────────────────
+        // ── 2. GS : Grafcet de Sécurité ────────────────────────────────────
         {
             let mut sorted: Vec<&StateInfo> = state_infos.iter()
                 .filter(|s| s.stype == StateType::Safety).collect();
 
             if !sorted.is_empty() {
-                // A-states en premier, puis D-states ; triés par ID dans chaque groupe
                 sorted.sort_by(|a, b| {
                     let ga = u8::from(!a.id.starts_with('A'));
                     let gb = u8::from(!b.id.starts_with('A'));
                     ga.cmp(&gb).then(a.id.cmp(&b.id))
                 });
 
-                let idx = project.grafcets.iter().position(|g| g.name == "GS")
-                    .unwrap_or_else(|| project.add_grafcet("GS"));
-                let ng = &mut project.grafcets[idx];
+                let mut ng = NamedGrafcet::new("GS");
+                ng.generated = true;
                 ng.grafcet = crate::grafcet::Grafcet::new();
 
                 let mut id_map = std::collections::HashMap::<String, u32>::new();
@@ -457,21 +469,17 @@ impl App {
                     id_map.insert(state.id.clone(), sid);
                 }
 
-                // Transitions GEMMA impliquant un état Safety en destination
                 for t in &trans_infos {
                     if t.to_type != StateType::Safety { continue; }
                     let to_sid = match id_map.get(&t.to) { Some(&v) => v, None => continue };
                     let nc = |c: &str| if c == "TRUE" || c.is_empty() { "1".to_string() } else { c.to_string() };
 
                     if t.from_type == StateType::Safety {
-                        // Safety → Safety : transition directe
                         if let Some(&from_sid) = id_map.get(&t.from) {
                             let tid = ng.grafcet.add_transition(from_sid, to_sid);
                             if let Some(tr) = ng.grafcet.transition_mut(tid) { tr.condition = nc(&t.cond); }
                         }
                     } else {
-                        // Cross-catégorie (ex : F1→D1 ARU) : accrochée au premier A-état
-                        // avec condition "X_{from} AND {cond}"
                         let anchor = sorted.iter().find(|s| s.id.starts_with('A'))
                             .and_then(|s| id_map.get(&s.id)).copied();
                         if let Some(from_sid) = anchor {
@@ -490,7 +498,7 @@ impl App {
                     }
                 }
 
-                // ARU : de chaque A-état vers le premier D-état (si pas déjà présent)
+                // ARU : de chaque A-état vers le premier D-état
                 let first_d = sorted.iter().find(|s| s.id.starts_with('D'))
                     .and_then(|s| id_map.get(&s.id)).copied();
                 if let Some(d_sid) = first_d {
@@ -508,10 +516,12 @@ impl App {
                         }
                     }
                 }
+
+                project.grafcets.push(ng);
             }
         }
 
-        // ── GC : Grafcet de Commandes ─────────────────────────────────────────
+        // ── 3. GC : Grafcet de Commandes ─────────────────────────────────
         {
             let mut sorted: Vec<&StateInfo> = state_infos.iter()
                 .filter(|s| s.stype == StateType::Command).collect();
@@ -519,9 +529,8 @@ impl App {
             if !sorted.is_empty() {
                 sorted.sort_by_key(|s| s.id.clone());
 
-                let idx = project.grafcets.iter().position(|g| g.name == "GC")
-                    .unwrap_or_else(|| project.add_grafcet("GC"));
-                let ng = &mut project.grafcets[idx];
+                let mut ng = NamedGrafcet::new("GC");
+                ng.generated = true;
                 ng.grafcet = crate::grafcet::Grafcet::new();
 
                 let mut id_map = std::collections::HashMap::<String, u32>::new();
@@ -534,21 +543,17 @@ impl App {
                     id_map.insert(state.id.clone(), sid);
                 }
 
-                // Transitions GEMMA impliquant un état Command en destination
                 for t in &trans_infos {
                     if t.to_type != StateType::Command { continue; }
                     let to_sid = match id_map.get(&t.to) { Some(&v) => v, None => continue };
 
                     if t.from_type == StateType::Command {
-                        // Command → Command : transition directe
                         if let Some(&from_sid) = id_map.get(&t.from) {
                             let cond = if t.cond == "TRUE" || t.cond.is_empty() { "1".to_string() } else { t.cond.clone() };
                             let tid = ng.grafcet.add_transition(from_sid, to_sid);
                             if let Some(tr) = ng.grafcet.transition_mut(tid) { tr.condition = cond; }
                         }
                     } else {
-                        // Cross-catégorie (ex : A1→F1) : accrochée à F1 ou au 1er état
-                        // avec condition "X_{from} AND {cond}"
                         let anchor = id_map.get("F1")
                             .or_else(|| sorted.first().and_then(|s| id_map.get(&s.id)))
                             .copied();
@@ -567,18 +572,18 @@ impl App {
                         }
                     }
                 }
+                project.grafcets.push(ng);
             }
         }
 
-        // ── GPN : Grafcet de Production Normale ───────────────────────────────
+        // ── 4. GPN : Grafcet de Production Normale ─────────────────────────
         {
             let prod_states: Vec<&StateInfo> = state_infos.iter()
                 .filter(|s| s.stype == StateType::Production).collect();
 
             if !prod_states.is_empty() {
-                let idx = project.grafcets.iter().position(|g| g.name == "GPN")
-                    .unwrap_or_else(|| project.add_grafcet("GPN"));
-                let ng = &mut project.grafcets[idx];
+                let mut ng = NamedGrafcet::new("GPN");
+                ng.generated = true;
                 ng.grafcet = crate::grafcet::Grafcet::new();
 
                 let mut id_map = std::collections::HashMap::<String, u32>::new();
@@ -599,18 +604,43 @@ impl App {
                         if let Some(tr) = ng.grafcet.transition_mut(tid) { tr.condition = cond; }
                     }
                 }
+                project.grafcets.push(ng);
             }
         }
 
-        // ── Sous-grafcets G_MANU / G_SEQ / … ─────────────────────────────────
-        for name in sub_grafcet_names {
-            if project.grafcets.iter().all(|g| g.name != name) {
-                project.add_grafcet(&name);
-            }
+        // ── 5. Sous-grafcets G_MANU / G_SEQ / … (squelettes vides) ──────────
+        for name in &sub_grafcet_names {
+            let mut ng = NamedGrafcet::new(name);
+            ng.generated = true;
+            project.grafcets.push(ng);
         }
+
+        // ── 6. GG circuits fermés GEMMA ────────────────────────────────────
+        let circuits = crate::gemma::extract_closed_circuits(&project.gemma);
+        for (i, circuit) in circuits.iter().enumerate() {
+            let graft_name = format!("GG{}", i + 1);
+            let desc = format!("{} | {}", circuit_name(circuit), circuit_short_name(circuit));
+            let grafcet = circuit_to_grafcet(&project.gemma, circuit);
+            let mut ng = NamedGrafcet {
+                name:        graft_name,
+                short_name:  None,
+                description: Some(desc),
+                grafcet,
+                generated:   true,
+            };
+            ng.generated = true;
+            project.grafcets.push(ng);
+        }
+
+        // ── 7. Réintégrer les grafcets utilisateur à la fin ────────────────
+        project.grafcets.extend(user_grafcets);
 
         self.grafcets_page.reset();
-        self.status = "Grafcets GS / GC / GPN + sous-grafcets générés depuis le GEMMA ✓".to_string();
+        self.status = format!(
+            "Grafcets regénérés : GS/GC/GPN + {} G_* + {} GG circuits ✓",
+            sub_grafcet_names.len(),
+            circuits.len()
+        );
         self.section = Section::Grafcets;
     }
 }

@@ -21,8 +21,8 @@ pub struct GrafcetsPage {
     /// Tampon pour le nom d'un nouveau grafcet
     new_grafcet_name: String,
     show_add_popup: bool,
-    /// Déclenche la génération depuis le GEMMA au prochain frame
-    generate_from_gemma: bool,
+    /// Signale à app.rs de (re)générer tous les grafcets GEMMA au prochain frame
+    pub needs_full_generate: bool,
     /// Index du grafcet à supprimer (traité hors closure de panel)
     pending_delete: Option<usize>,
     /// Pour chaque onglet : vue partagée JSON + canvas active
@@ -38,7 +38,7 @@ impl Default for GrafcetsPage {
             editors: Vec::new(),
             new_grafcet_name: String::new(),
             show_add_popup: false,
-            generate_from_gemma: false,
+            needs_full_generate: false,
             pending_delete: None,
             graphic_active: Vec::new(),
             canvas_only: Vec::new(),
@@ -69,61 +69,32 @@ impl GrafcetsPage {
             self.canvas_only.push(false);
         }
 
-        // ── Barre d'onglets ────────────────────────────────────────────────
-        egui::Panel::top("grafcets_tabs")
-            .exact_size(36.0)
-            .frame(egui::Frame::new().fill(egui::Color32::from_rgb(26, 37, 47)).inner_margin(egui::Margin::same(4)))
+        // ── Ligne 1 : boutons d'action ─────────────────────────────────────
+        egui::Panel::top("grafcets_actions")
+            .exact_size(34.0)
+            .frame(egui::Frame::new().fill(egui::Color32::from_rgb(20, 30, 40)).inner_margin(egui::Margin::same(4)))
             .show_inside(ui, |ui| {
                 ui.horizontal(|ui| {
-                    for (i, ng) in project.grafcets.iter().enumerate() {
-                        let active = self.active_tab == i;
-                        let (bg, fg) = if active {
-                            (egui::Color32::from_rgb(41, 128, 185), egui::Color32::WHITE)
-                        } else {
-                            (egui::Color32::from_rgb(26, 37, 47), egui::Color32::from_rgb(170, 190, 210))
-                        };
-                        // Affichage : short_name si présent, sinon name
-                        let display = ng.short_name.as_deref().unwrap_or(&ng.name);
-                        let btn = egui::Button::new(
-                            egui::RichText::new(display).size(12.0).color(fg),
-                        )
-                        .fill(bg)
-                        .min_size(Vec2::new(55.0, 28.0));
-                        let resp = ui.add(btn);
-                        // Hover : description (GG) > name (short_name présent) > rien
-                        let resp = if let Some(desc) = ng.description.as_deref() {
-                            resp.on_hover_text(desc)
-                        } else if ng.short_name.is_some() {
-                            resp.on_hover_text(&ng.name)
-                        } else {
-                            resp
-                        };
-                        if resp.clicked() {
-                            self.active_tab = i;
-                        }
-                        ui.add_space(2.0);
-                    }
-
                     // Bouton + nouveau
-                    ui.add_space(8.0);
                     if ui
                         .add(
                             egui::Button::new(
-                                egui::RichText::new("＋").size(14.0).color(egui::Color32::WHITE),
+                                egui::RichText::new("＋ Nouveau").size(12.0).color(egui::Color32::WHITE),
                             )
                             .fill(egui::Color32::from_rgb(39, 60, 78))
-                            .min_size(Vec2::new(32.0, 28.0)),
+                            .min_size(Vec2::new(85.0, 26.0)),
                         )
-                        .on_hover_text("Ajouter un grafcet")
+                        .on_hover_text("Ajouter un grafcet utilisateur")
                         .clicked()
                     {
                         self.show_add_popup = true;
                     }
 
-                    // Bouton ⚙ Depuis GEMMA (toujours visible, grisé si GEMMA vide)
+                    ui.add_space(6.0);
+
+                    // Bouton ⚙ Depuis GEMMA
                     {
                         let gemma_ready = !project.gemma.states.is_empty();
-                        ui.add_space(6.0);
                         let btn_color = if gemma_ready {
                             egui::Color32::from_rgb(90, 50, 130)
                         } else {
@@ -134,28 +105,27 @@ impl GrafcetsPage {
                         } else {
                             egui::Color32::from_rgb(110, 100, 120)
                         };
-                        let resp = ui
-                            .add_enabled(
-                                gemma_ready,
-                                egui::Button::new(
-                                    egui::RichText::new("⚙ Depuis GEMMA")
-                                        .size(11.0)
-                                        .color(text_color),
-                                )
-                                .fill(btn_color)
-                                .min_size(Vec2::new(115.0, 28.0)),
-                            );
+                        let resp = ui.add_enabled(
+                            gemma_ready,
+                            egui::Button::new(
+                                egui::RichText::new("⚙ Depuis GEMMA")
+                                    .size(11.0)
+                                    .color(text_color),
+                            )
+                            .fill(btn_color)
+                            .min_size(Vec2::new(118.0, 26.0)),
+                        );
                         let resp = resp.on_hover_text(if gemma_ready {
-                            "Générer les grafcets depuis les circuits fermés du GEMMA"
+                            "Regénérer TOUS les grafcets GEMMA (GS, GC, GPN, G_*, GG) — grafcets utilisateur conservés"
                         } else {
                             "GEMMA non encore généré — remplissez le questionnaire d'abord"
                         });
                         if resp.clicked() {
-                            self.generate_from_gemma = true;
+                            self.needs_full_generate = true;
                         }
                     }
 
-                    // Bouton supprimer (à droite) — flag différé hors closure
+                    // Bouton supprimer l'onglet actif (à droite)
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if !project.grafcets.is_empty() {
                             let del = ui.add(
@@ -163,7 +133,7 @@ impl GrafcetsPage {
                                     egui::RichText::new("🗑 Supprimer").size(11.0).color(egui::Color32::WHITE),
                                 )
                                 .fill(egui::Color32::from_rgb(150, 40, 40))
-                                .min_size(Vec2::new(90.0, 28.0)),
+                                .min_size(Vec2::new(90.0, 26.0)),
                             );
                             if del.clicked() {
                                 self.pending_delete = Some(
@@ -173,6 +143,45 @@ impl GrafcetsPage {
                         }
                     });
                 });
+            });
+
+        // ── Ligne 2 : onglets (défilables horizontalement) ────────────────
+        egui::Panel::top("grafcets_tabs")
+            .exact_size(34.0)
+            .frame(egui::Frame::new().fill(egui::Color32::from_rgb(26, 37, 47)).inner_margin(egui::Margin::same(3)))
+            .show_inside(ui, |ui| {
+                egui::ScrollArea::horizontal()
+                    .auto_shrink([false, true])
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            for (i, ng) in project.grafcets.iter().enumerate() {
+                                let active = self.active_tab == i;
+                                let (bg, fg) = if active {
+                                    (egui::Color32::from_rgb(41, 128, 185), egui::Color32::WHITE)
+                                } else {
+                                    (egui::Color32::from_rgb(26, 37, 47), egui::Color32::from_rgb(170, 190, 210))
+                                };
+                                let display = ng.short_name.as_deref().unwrap_or(&ng.name);
+                                let btn = egui::Button::new(
+                                    egui::RichText::new(display).size(12.0).color(fg),
+                                )
+                                .fill(bg)
+                                .min_size(Vec2::new(55.0, 26.0));
+                                let resp = ui.add(btn);
+                                let resp = if let Some(desc) = ng.description.as_deref() {
+                                    resp.on_hover_text(desc)
+                                } else if ng.short_name.is_some() {
+                                    resp.on_hover_text(&ng.name)
+                                } else {
+                                    resp
+                                };
+                                if resp.clicked() {
+                                    self.active_tab = i;
+                                }
+                                ui.add_space(2.0);
+                            }
+                        });
+                    });
             });
 
         // ── Popup nouveau grafcet ──────────────────────────────────────────
@@ -215,50 +224,6 @@ impl GrafcetsPage {
                 if del_idx < self.canvas_only.len()  { self.canvas_only.remove(del_idx); }
                 self.active_tab = self.active_tab.saturating_sub(if del_idx <= self.active_tab { 1 } else { 0 });
                 status_out = Some(format!("Grafcet « {name} » supprimé"));
-            }
-        }
-
-        // ── Génération depuis GEMMA ────────────────────────────────────────
-        if self.generate_from_gemma {
-            self.generate_from_gemma = false;
-            let circuits = crate::gemma::extract_closed_circuits(&project.gemma);
-            let mut count = 0usize;
-            // Déterminer le prochain indice GG en comptant les GG déjà présents
-            let mut gg_idx = project.grafcets.iter()
-                .filter(|ng| ng.name.len() > 2
-                    && ng.name.starts_with("GG")
-                    && ng.name[2..].parse::<usize>().is_ok())
-                .count();
-            for circuit in &circuits {
-                let desc = format!("{} | {}", circuit_name(circuit), circuit_short_name(circuit));
-                // Déduplication par description (identité du circuit)
-                if project.grafcets.iter().any(|ng| ng.description.as_deref() == Some(desc.as_str())) {
-                    continue;
-                }
-                gg_idx += 1;
-                let graft_name = format!("GG{gg_idx}");
-                let grafcet = circuit_to_grafcet(&project.gemma, circuit);
-                project.grafcets.push(NamedGrafcet {
-                    name:        graft_name,
-                    short_name:  None,
-                    description: Some(desc),
-                    grafcet,
-                    generated:   true,
-                });
-                self.editors.push(CanvasEditor::default());
-                self.graphic_active.push(false);
-                self.canvas_only.push(false);
-                count += 1;
-            }
-            status_out = if count > 0 {
-                Some(format!("{count} grafcet(s) générés depuis les circuits GEMMA"))
-            } else if circuits.is_empty() {
-                Some("Aucun circuit fermé trouvé dans le GEMMA".to_string())
-            } else {
-                Some("Tous les circuits GEMMA sont déjà présents".to_string())
-            };
-            if count > 0 {
-                self.active_tab = project.grafcets.len().saturating_sub(count);
             }
         }
 
@@ -447,7 +412,7 @@ impl GrafcetsPage {
 
 /// Retourne un nom court symbolique pour l'onglet, ex : "A1→F1→A2".
 /// Pour les circuits > 4 états, affiche le premier et le dernier : "A1→…→F1".
-fn circuit_short_name(circuit: &[String]) -> String {
+pub fn circuit_short_name(circuit: &[String]) -> String {
     let n = circuit.len();
     if n <= 4 {
         circuit.join("→")
@@ -458,7 +423,7 @@ fn circuit_short_name(circuit: &[String]) -> String {
 
 /// Retourne un nom descriptif pour un circuit GEMMA,
 /// selon les correspondances définies dans circuits_fermes_possibles.md.
-fn circuit_name(circuit: &[String]) -> String {
+pub fn circuit_name(circuit: &[String]) -> String {
     let s: std::collections::HashSet<&str> = circuit.iter().map(|s| s.as_str()).collect();
     let has = |id: &str| s.contains(id);
     let n = circuit.len();
@@ -496,7 +461,7 @@ fn circuit_name(circuit: &[String]) -> String {
 /// en un `Grafcet` avec étapes disposées verticalement.
 /// - La première étape est marquée `Initial`.
 /// - La condition de chaque transition est issue du GEMMA ; "1" si absente.
-fn circuit_to_grafcet(gemma: &Gemma, circuit: &[String]) -> Grafcet {
+pub fn circuit_to_grafcet(gemma: &Gemma, circuit: &[String]) -> Grafcet {
     let mut g = Grafcet::new();
     let n = circuit.len();
     if n == 0 {

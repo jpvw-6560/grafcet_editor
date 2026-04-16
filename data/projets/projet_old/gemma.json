@@ -9,7 +9,8 @@
       ],
       "w": 115.0,
       "h": 40.0,
-      "description": ""
+      "description": "",
+      "action": ""
     },
     {
       "id": "F1",
@@ -20,7 +21,8 @@
       ],
       "w": 155.0,
       "h": 165.0,
-      "description": ""
+      "description": "",
+      "action": "Remplissage bouteilles"
     },
     {
       "id": "A6",
@@ -31,7 +33,8 @@
       ],
       "w": 117.0,
       "h": 45.0,
-      "description": ""
+      "description": "",
+      "action": "Dosage & malaxage"
     },
     {
       "id": "A2",
@@ -42,7 +45,8 @@
       ],
       "w": 47.0,
       "h": 115.0,
-      "description": ""
+      "description": "",
+      "action": ""
     },
     {
       "id": "A3",
@@ -53,7 +57,8 @@
       ],
       "w": 46.0,
       "h": 87.0,
-      "description": ""
+      "description": "",
+      "action": "Vidange cuve"
     },
     {
       "id": "A4",
@@ -64,7 +69,8 @@
       ],
       "w": 83.0,
       "h": 52.0,
-      "description": ""
+      "description": "",
+      "action": ""
     },
     {
       "id": "D1",
@@ -75,7 +81,8 @@
       ],
       "w": 274.0,
       "h": 45.0,
-      "description": ""
+      "description": "",
+      "action": ""
     },
     {
       "id": "D2",
@@ -86,7 +93,8 @@
       ],
       "w": 98.0,
       "h": 47.0,
-      "description": ""
+      "description": "",
+      "action": ""
     },
     {
       "id": "A5",
@@ -97,7 +105,8 @@
       ],
       "w": 117.0,
       "h": 115.0,
-      "description": ""
+      "description": "",
+      "action": ""
     },
     {
       "id": "A7",
@@ -108,7 +117,8 @@
       ],
       "w": 98.0,
       "h": 52.0,
-      "description": ""
+      "description": "",
+      "action": ""
     },
     {
       "id": "F6",
@@ -119,7 +129,8 @@
       ],
       "w": 64.0,
       "h": 104.0,
-      "description": ""
+      "description": "",
+      "action": ""
     },
     {
       "id": "F4",
@@ -130,7 +141,8 @@
       ],
       "w": 64.0,
       "h": 78.0,
-      "description": ""
+      "description": "",
+      "action": ""
     },
     {
       "id": "F5",
@@ -141,7 +153,8 @@
       ],
       "w": 64.0,
       "h": 208.0,
-      "description": ""
+      "description": "",
+      "action": ""
     },
     {
       "id": "F2",
@@ -152,7 +165,8 @@
       ],
       "w": 47.0,
       "h": 83.0,
-      "description": ""
+      "description": "",
+      "action": ""
     },
     {
       "id": "F3",
@@ -163,7 +177,8 @@
       ],
       "w": 47.0,
       "h": 83.0,
-      "description": ""
+      "description": "",
+      "action": ""
     },
     {
       "id": "D3",
@@ -174,7 +189,8 @@
       ],
       "w": 118.0,
       "h": 47.0,
-      "description": ""
+      "description": "",
+      "action": ""
     }
   ],
   "transitions": [

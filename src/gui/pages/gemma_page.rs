@@ -777,10 +777,107 @@ impl GemmaPage {
                         self.needs_save = true;
                     }
                 });
+
+                // ── Transitions sortantes ─────────────────────────────────
+                let out_trans: Vec<(u32, String, String)> = gemma.transitions.iter()
+                    .filter(|t| t.from == sid)
+                    .map(|t| (t.id, t.to.clone(), t.condition.to_display()))
+                    .collect();
+
+                if !out_trans.is_empty() {
+                    ui.add_space(8.0);
+                    ui.separator();
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new("Transitions sortantes :")
+                            .size(11.0).color(Color32::from_rgb(140, 160, 180))
+                    );
+                    ui.add_space(2.0);
+
+                    let mut apply_tid:  Option<u32>          = None;
+                    let mut cancel_edit                       = false;
+                    let mut start_edit: Option<(u32, String)> = None;
+
+                    for (tid, to_id, cond_str) in &out_trans {
+                        let is_editing = self.editing_cond
+                            .as_ref().map(|(id, _)| *id == *tid).unwrap_or(false);
+
+                        ui.add_space(3.0);
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new(format!("→ {to_id}"))
+                                    .size(11.0).strong()
+                                    .color(Color32::from_rgb(180, 210, 240))
+                            );
+                            if !is_editing {
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if ui.add(egui::Button::new(
+                                                egui::RichText::new("✏").size(11.0)))
+                                            .on_hover_text("Éditer la condition")
+                                            .clicked()
+                                        {
+                                            start_edit = Some((*tid, cond_str.clone()));
+                                        }
+                                    }
+                                );
+                            }
+                        });
+
+                        if is_editing {
+                            if let Some((_, ref mut s)) = self.editing_cond {
+                                ui.add(egui::TextEdit::singleline(s)
+                                    .hint_text("Condition (ex : Bp_f)")
+                                    .desired_width(f32::INFINITY));
+                            }
+                            ui.horizontal(|ui| {
+                                if ui.add(egui::Button::new("✔ Appliquer")
+                                        .fill(Color32::from_rgb(39, 100, 58))).clicked() {
+                                    apply_tid = Some(*tid);
+                                }
+                                if ui.add(egui::Button::new("✕").small()).clicked() {
+                                    cancel_edit = true;
+                                }
+                            });
+                        } else {
+                            let display = if cond_str == "FALSE"
+                                || cond_str == "TRUE"
+                                || cond_str.is_empty()
+                            {
+                                egui::RichText::new("⚠ aucune condition")
+                                    .size(10.0).italics()
+                                    .color(Color32::from_rgb(200, 80, 80))
+                            } else {
+                                egui::RichText::new(cond_str)
+                                    .size(10.0)
+                                    .color(Color32::from_rgb(180, 140, 255))
+                            };
+                            ui.label(display);
+                        }
+                    }
+
+                    // Appliquer les mutations après la boucle
+                    if let Some(tid) = apply_tid {
+                        if let Some((_, s)) = &self.editing_cond {
+                            let new_cond = Expr::from_str(s);
+                            if let Some(t) = gemma.transitions.iter_mut()
+                                    .find(|t| t.id == tid) {
+                                t.condition = new_cond;
+                            }
+                        }
+                        self.editing_cond = None;
+                        self.needs_save = true;
+                    } else if cancel_edit {
+                        self.editing_cond = None;
+                    } else if let Some((tid, s)) = start_edit {
+                        self.editing_cond = Some((tid, s));
+                    }
+                }
             }
         } else {
             ui.label(egui::RichText::new(
-                "Cliquez sur une flèche\npour éditer sa condition.")
+                "Cliquez sur un état\npour éditer son action\net ses transitions.")
                 .size(11.0).italics().color(Color32::from_rgb(100, 120, 140)));
             ui.add_space(12.0);
             ui.separator();

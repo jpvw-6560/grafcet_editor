@@ -16,6 +16,8 @@ use crate::project::{NamedGrafcet, Project};
 pub struct GrafcetsPage {
     /// Index de l'onglet affiché
     active_tab: usize,
+    /// Décalage de la fenêtre d'onglets visibles (navigation ◀ / ▶)
+    tab_offset: usize,
     /// Un CanvasEditor par grafcet (indexé pareil que project.grafcets)
     editors: Vec<CanvasEditor>,
     /// Tampon pour le nom d'un nouveau grafcet
@@ -35,6 +37,7 @@ impl Default for GrafcetsPage {
     fn default() -> Self {
         Self {
             active_tab: 0,
+            tab_offset: 0,
             editors: Vec::new(),
             new_grafcet_name: String::new(),
             show_add_popup: false,
@@ -53,6 +56,7 @@ impl GrafcetsPage {
         self.graphic_active.clear();
         self.canvas_only.clear();
         self.active_tab = 0;
+        self.tab_offset = 0;
     }
 
     pub fn show(&mut self, ui: &mut egui::Ui, project: &mut Project) -> Option<String> {
@@ -145,44 +149,91 @@ impl GrafcetsPage {
                 });
             });
 
-        // ── Ligne 2 : onglets (défilables horizontalement) ────────────────
+        // ── Ligne 2 : onglets avec navigation ◀ / ▶ ──────────────────────
+        const TABS_PAGE: usize = 8; // nombre max d'onglets visibles à la fois
+        let total_tabs = project.grafcets.len();
+        // Auto-scroll : si l'onglet actif sort de la fenêtre, ajuster l'offset
+        if self.active_tab < self.tab_offset {
+            self.tab_offset = self.active_tab;
+        } else if total_tabs > 0 && self.active_tab >= self.tab_offset + TABS_PAGE {
+            self.tab_offset = self.active_tab.saturating_sub(TABS_PAGE - 1);
+        }
+        // Clamp l'offset
+        if total_tabs <= TABS_PAGE {
+            self.tab_offset = 0;
+        } else {
+            self.tab_offset = self.tab_offset.min(total_tabs - TABS_PAGE);
+        }
+        let show_left  = self.tab_offset > 0;
+        let show_right = total_tabs > TABS_PAGE && self.tab_offset + TABS_PAGE < total_tabs;
+        let mut inc_offset: i32 = 0;
+
         egui::Panel::top("grafcets_tabs")
             .exact_size(34.0)
             .frame(egui::Frame::new().fill(egui::Color32::from_rgb(26, 37, 47)).inner_margin(egui::Margin::same(3)))
             .show_inside(ui, |ui| {
-                egui::ScrollArea::horizontal()
-                    .auto_shrink([false, true])
-                    .show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            for (i, ng) in project.grafcets.iter().enumerate() {
-                                let active = self.active_tab == i;
-                                let (bg, fg) = if active {
-                                    (egui::Color32::from_rgb(41, 128, 185), egui::Color32::WHITE)
-                                } else {
-                                    (egui::Color32::from_rgb(26, 37, 47), egui::Color32::from_rgb(170, 190, 210))
-                                };
-                                let display = ng.short_name.as_deref().unwrap_or(&ng.name);
-                                let btn = egui::Button::new(
-                                    egui::RichText::new(display).size(12.0).color(fg),
-                                )
-                                .fill(bg)
-                                .min_size(Vec2::new(55.0, 26.0));
-                                let resp = ui.add(btn);
-                                let resp = if let Some(desc) = ng.description.as_deref() {
-                                    resp.on_hover_text(desc)
-                                } else if ng.short_name.is_some() {
-                                    resp.on_hover_text(&ng.name)
-                                } else {
-                                    resp
-                                };
-                                if resp.clicked() {
-                                    self.active_tab = i;
-                                }
-                                ui.add_space(2.0);
+                ui.horizontal(|ui| {
+                    // Flèche gauche
+                    if show_left {
+                        if ui.add(
+                            egui::Button::new(egui::RichText::new("◀").size(13.0).color(egui::Color32::from_rgb(170, 200, 230)))
+                                .fill(egui::Color32::from_rgb(26, 37, 47))
+                                .min_size(Vec2::new(22.0, 26.0)),
+                        ).on_hover_text("Onglets précédents").clicked() {
+                            inc_offset = -1;
+                        }
+                        ui.add_space(2.0);
+                    }
+
+                    // Onglets visibles
+                    let first = self.tab_offset;
+                    let last  = (self.tab_offset + TABS_PAGE).min(total_tabs);
+                    for i in first..last {
+                        if let Some(ng) = project.grafcets.get(i) {
+                            let active = self.active_tab == i;
+                            let (bg, fg) = if active {
+                                (egui::Color32::from_rgb(41, 128, 185), egui::Color32::WHITE)
+                            } else {
+                                (egui::Color32::from_rgb(26, 37, 47), egui::Color32::from_rgb(170, 190, 210))
+                            };
+                            let display = ng.short_name.as_deref().unwrap_or(&ng.name);
+                            let btn = egui::Button::new(
+                                egui::RichText::new(display).size(12.0).color(fg),
+                            )
+                            .fill(bg)
+                            .min_size(Vec2::new(55.0, 26.0));
+                            let resp = ui.add(btn);
+                            let resp = if let Some(desc) = ng.description.as_deref() {
+                                resp.on_hover_text(desc)
+                            } else if ng.short_name.is_some() {
+                                resp.on_hover_text(&ng.name)
+                            } else {
+                                resp
+                            };
+                            if resp.clicked() {
+                                self.active_tab = i;
                             }
-                        });
-                    });
+                            ui.add_space(2.0);
+                        }
+                    }
+
+                    // Flèche droite
+                    if show_right {
+                        ui.add_space(2.0);
+                        if ui.add(
+                            egui::Button::new(egui::RichText::new("▶").size(13.0).color(egui::Color32::from_rgb(170, 200, 230)))
+                                .fill(egui::Color32::from_rgb(26, 37, 47))
+                                .min_size(Vec2::new(22.0, 26.0)),
+                        ).on_hover_text("Onglets suivants").clicked() {
+                            inc_offset = 1;
+                        }
+                    }
+                });
             });
+        if inc_offset != 0 {
+            let new_off = self.tab_offset as i32 + inc_offset;
+            self.tab_offset = new_off.clamp(0, (total_tabs.saturating_sub(TABS_PAGE)) as i32) as usize;
+        }
 
         // ── Popup nouveau grafcet ──────────────────────────────────────────
         if self.show_add_popup {

@@ -815,25 +815,36 @@ impl GemmaPage {
             let mut fire: Option<(String, String)> = None;
             for (_, to_id, cond) in &avail {
                 let has_cond = cond != "TRUE" && cond != "FALSE";
-                ui.add_space(3.0);
-                let btn_label = format!("→  {to_id}");
+                ui.add_space(4.0);
+
+                // Ligne destination
+                ui.label(
+                    egui::RichText::new(format!("→  {to_id}"))
+                        .size(11.0).strong()
+                        .color(Color32::from_rgb(180, 210, 240))
+                );
+
+                // Bouton condition (cliquable)
+                let btn_text = if has_cond {
+                    format!("[ {cond} ]")
+                } else {
+                    "[ condition libre ]".to_string()
+                };
+                let cond_color = if has_cond {
+                    Color32::from_rgb(220, 170, 255)
+                } else {
+                    Color32::from_rgb(180, 220, 180)
+                };
                 if ui.add(
                     egui::Button::new(
-                        egui::RichText::new(&btn_label).size(12.0).strong()
+                        egui::RichText::new(&btn_text).size(12.0).strong().color(cond_color)
                     )
-                    .fill(Color32::from_rgb(30, 70, 35))
+                    .fill(Color32::from_rgb(35, 30, 55))
                     .min_size(Vec2::new(ui.available_width(), 0.0))
-                ).on_hover_text(
-                    if has_cond { format!("Condition : {cond}") }
-                    else { "Transition libre (aucune condition)".to_string() }
-                ).clicked() {
+                )
+                .on_hover_text(format!("Activer : {} → {}", self.sim_state, to_id))
+                .clicked() {
                     fire = Some((to_id.clone(), cond.clone()));
-                }
-                if has_cond {
-                    ui.label(
-                        egui::RichText::new(format!("  [{cond}]"))
-                            .size(10.0).color(Color32::from_rgb(180, 140, 255))
-                    );
                 }
             }
 

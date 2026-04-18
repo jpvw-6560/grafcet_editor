@@ -1,0 +1,61 @@
+{
+  "nom": "GC",
+  "type": "grafcet",
+
+  "etapes": [
+    { "id": "A1" }, { "id": "A2" }, { "id": "A3" }, { "id": "A4" },
+    { "id": "A5" }, { "id": "A6" }, { "id": "A7" },
+
+    { "id": "D1" }, { "id": "D2" }, { "id": "D3" },
+
+    { "id": "F1" }, { "id": "F2" }, { "id": "F3" },
+    { "id": "F4" }, { "id": "F5" }, { "id": "F6" }
+  ],
+
+  "initial": "A1",
+
+  "transitions": [
+    { "from": "A1", "to": "F1", "condition": "Depart_cycle" },
+    { "from": "A6", "to": "A1", "condition": "Init_OK" },
+    { "from": "F1", "to": "A2", "condition": "Stop" },
+    { "from": "A2", "to": "A1", "condition": "Fin_cycle" },
+    { "from": "F1", "to": "A3", "condition": "Stop_immediat" },
+    { "from": "A3", "to": "A4", "condition": "Arret_obtenu" },
+    { "from": "A4", "to": "F1", "condition": "Remise_en_marche" },
+
+    { "from": "F1", "to": "D1", "condition": "Defaut" },
+    { "from": "F1", "to": "D2", "condition": "Defaut_direct" },
+    { "from": "D1", "to": "D2", "condition": "EU_relachee" },
+    { "from": "D1", "to": "A5", "condition": "Reset_direct" },
+    { "from": "D2", "to": "A5", "condition": "Acquit_defaut" },
+
+    { "from": "A5", "to": "A6", "condition": "Reset_machine" },
+    { "from": "A5", "to": "A7", "condition": "Mode_reglage" },
+    { "from": "A7", "to": "A4", "condition": "Arret_obtenu" },
+    { "from": "A7", "to": "A6", "condition": "Quitter_reglage" },
+
+    { "from": "F1", "to": "F6", "condition": "Mode_test" },
+    { "from": "F6", "to": "F1", "condition": "Fin_test" },
+    { "from": "F6", "to": "D1", "condition": "AU" },
+
+    { "from": "A1", "to": "F4", "condition": "Mode_verif_libre" },
+    { "from": "F1", "to": "F4", "condition": "Mode_verif_libre" },
+    { "from": "F4", "to": "A6", "condition": "CI" },
+
+    { "from": "A1", "to": "F5", "condition": "Mode_verif_seq" },
+    { "from": "F1", "to": "F5", "condition": "Mode_verif_seq" },
+    { "from": "F5", "to": "F1", "condition": "Fin_verif" },
+    { "from": "F5", "to": "F4", "condition": "Passage_verif_libre" },
+
+    { "from": "A1", "to": "F2", "condition": "Mode_preparation" },
+    { "from": "F2", "to": "F1", "condition": "Préparation_ok" },
+
+    { "from": "F1", "to": "F3", "condition": "Mode_cloture" },
+    { "from": "F3", "to": "A1", "condition": "Clôture_ok" },
+
+    { "from": "F1", "to": "D3", "condition": "Defaut_mineur" },
+    { "from": "D3", "to": "A2", "condition": "Stop" },
+    { "from": "D3", "to": "A3", "condition": "Stop_immediat" },
+    { "from": "D3", "to": "D2", "condition": "Defaut_majeur" }
+  ]
+}

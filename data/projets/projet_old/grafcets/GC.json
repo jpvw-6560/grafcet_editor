@@ -2,17 +2,697 @@
   "steps": [
     {
       "id": 0,
-      "label": "E0",
-      "actions": [],
+      "label": "\"A1\"",
+      "actions": [
+        "Start_G_A1"
+      ],
       "kind": "Initial",
       "pos": [
+        357.53964,
+        12.652934
+      ],
+      "active": false
+    },
+    {
+      "id": 1,
+      "label": "\"A6\"",
+      "actions": [
+        "Start_G_A6"
+      ],
+      "kind": "Normal",
+      "pos": [
+        -230.0,
+        420.0
+      ],
+      "active": false
+    },
+    {
+      "id": 2,
+      "label": "\"A7\"",
+      "actions": [
+        "Start_G_A7"
+      ],
+      "kind": "Normal",
+      "pos": [
         400.0,
-        100.0
+        740.0
+      ],
+      "active": false
+    },
+    {
+      "id": 3,
+      "label": "\"F1\"",
+      "actions": [
+        "Start_G_PN"
+      ],
+      "kind": "Normal",
+      "pos": [
+        130.0,
+        260.0
+      ],
+      "active": false
+    },
+    {
+      "id": 4,
+      "label": "\"F2\"",
+      "actions": [
+        "Start_G_F2"
+      ],
+      "kind": "Normal",
+      "pos": [
+        310.0,
+        260.0
+      ],
+      "active": false
+    },
+    {
+      "id": 5,
+      "label": "\"F3\"",
+      "actions": [
+        "Start_G_F3"
+      ],
+      "kind": "Normal",
+      "pos": [
+        -50.0,
+        420.0
+      ],
+      "active": false
+    },
+    {
+      "id": 6,
+      "label": "\"F4\"",
+      "actions": [
+        "Start_G_F4"
+      ],
+      "kind": "Normal",
+      "pos": [
+        490.0,
+        260.0
+      ],
+      "active": false
+    },
+    {
+      "id": 7,
+      "label": "\"F5\"",
+      "actions": [
+        "Start_G_F5"
+      ],
+      "kind": "Normal",
+      "pos": [
+        670.0,
+        260.0
+      ],
+      "active": false
+    },
+    {
+      "id": 8,
+      "label": "\"F6\"",
+      "actions": [
+        "Start_G_F6"
+      ],
+      "kind": "Normal",
+      "pos": [
+        130.0,
+        420.0
+      ],
+      "active": false
+    },
+    {
+      "id": 9,
+      "label": "\"D3\"",
+      "actions": [
+        "Start_G_D3"
+      ],
+      "kind": "Normal",
+      "pos": [
+        310.0,
+        420.0
+      ],
+      "active": false
+    },
+    {
+      "id": 10,
+      "label": "\"D1\"",
+      "actions": [
+        "Start_G_D1"
+      ],
+      "kind": "Normal",
+      "pos": [
+        490.0,
+        420.0
+      ],
+      "active": false
+    },
+    {
+      "id": 11,
+      "label": "\"D2\"",
+      "actions": [
+        "Start_G_D2"
+      ],
+      "kind": "Normal",
+      "pos": [
+        670.0,
+        420.0
+      ],
+      "active": false
+    },
+    {
+      "id": 12,
+      "label": "\"A2\"",
+      "actions": [
+        "Start_G_A2"
+      ],
+      "kind": "Normal",
+      "pos": [
+        850.0,
+        420.0
+      ],
+      "active": false
+    },
+    {
+      "id": 13,
+      "label": "\"A3\"",
+      "actions": [
+        "Start_G_A3"
+      ],
+      "kind": "Normal",
+      "pos": [
+        1030.0,
+        420.0
+      ],
+      "active": false
+    },
+    {
+      "id": 14,
+      "label": "\"A4\"",
+      "actions": [
+        "Start_G_A4"
+      ],
+      "kind": "Normal",
+      "pos": [
+        310.0,
+        580.0
+      ],
+      "active": false
+    },
+    {
+      "id": 15,
+      "label": "\"A5\"",
+      "actions": [
+        "Start_G_A5"
+      ],
+      "kind": "Normal",
+      "pos": [
+        490.0,
+        580.0
       ],
       "active": false
     }
   ],
-  "transitions": [],
-  "next_step_id": 1,
-  "next_trans_id": 0
+  "transitions": [
+    {
+      "id": 0,
+      "from_step": 0,
+      "to_step": 3,
+      "condition": "Depart_cycle",
+      "pos": [
+        130.0,
+        180.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 1,
+      "from_step": 1,
+      "to_step": 0,
+      "condition": "Init_OK",
+      "pos": [
+        -230.0,
+        500.0
+      ],
+      "route_y": null,
+      "dst_route_x": -337.5,
+      "and_group": null
+    },
+    {
+      "id": 2,
+      "from_step": 3,
+      "to_step": 12,
+      "condition": "Stop",
+      "pos": [
+        850.0,
+        340.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 3,
+      "from_step": 12,
+      "to_step": 0,
+      "condition": "Fin_cycle",
+      "pos": [
+        850.0,
+        500.0
+      ],
+      "route_y": null,
+      "dst_route_x": -381.5,
+      "and_group": null
+    },
+    {
+      "id": 4,
+      "from_step": 3,
+      "to_step": 13,
+      "condition": "Stop_immediat",
+      "pos": [
+        1030.0,
+        340.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 5,
+      "from_step": 13,
+      "to_step": 14,
+      "condition": "Arret_obtenu",
+      "pos": [
+        1030.0,
+        500.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 6,
+      "from_step": 14,
+      "to_step": 3,
+      "condition": "Remise_en_marche",
+      "pos": [
+        310.0,
+        660.0
+      ],
+      "route_y": null,
+      "dst_route_x": -425.5,
+      "and_group": null
+    },
+    {
+      "id": 7,
+      "from_step": 14,
+      "to_step": 1,
+      "condition": "Init_position",
+      "pos": [
+        310.0,
+        660.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 8,
+      "from_step": 3,
+      "to_step": 10,
+      "condition": "Defaut",
+      "pos": [
+        490.0,
+        340.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 9,
+      "from_step": 3,
+      "to_step": 11,
+      "condition": "Defaut_direct",
+      "pos": [
+        670.0,
+        340.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 10,
+      "from_step": 10,
+      "to_step": 11,
+      "condition": "EU_relachee",
+      "pos": [
+        670.0,
+        500.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 11,
+      "from_step": 10,
+      "to_step": 15,
+      "condition": "Reset_direct",
+      "pos": [
+        490.0,
+        500.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 12,
+      "from_step": 11,
+      "to_step": 15,
+      "condition": "Acquit_defaut",
+      "pos": [
+        490.0,
+        500.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 13,
+      "from_step": 15,
+      "to_step": 1,
+      "condition": "Reset_machine",
+      "pos": [
+        -230.0,
+        660.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 14,
+      "from_step": 15,
+      "to_step": 2,
+      "condition": "Mode_reglage",
+      "pos": [
+        400.0,
+        660.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 15,
+      "from_step": 2,
+      "to_step": 14,
+      "condition": "Arret_obtenu",
+      "pos": [
+        310.0,
+        820.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 16,
+      "from_step": 2,
+      "to_step": 1,
+      "condition": "Quitter_reglage",
+      "pos": [
+        -230.0,
+        820.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 17,
+      "from_step": 3,
+      "to_step": 8,
+      "condition": "Mode_test",
+      "pos": [
+        130.0,
+        340.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 18,
+      "from_step": 8,
+      "to_step": 3,
+      "condition": "Fin_test",
+      "pos": [
+        130.0,
+        500.0
+      ],
+      "route_y": null,
+      "dst_route_x": -469.5,
+      "and_group": null
+    },
+    {
+      "id": 19,
+      "from_step": 8,
+      "to_step": 10,
+      "condition": "AU",
+      "pos": [
+        130.0,
+        500.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 20,
+      "from_step": 0,
+      "to_step": 6,
+      "condition": "Mode_verif_libre",
+      "pos": [
+        490.0,
+        180.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 21,
+      "from_step": 3,
+      "to_step": 6,
+      "condition": "Mode_verif_libre",
+      "pos": [
+        490.0,
+        340.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 22,
+      "from_step": 6,
+      "to_step": 1,
+      "condition": "CI",
+      "pos": [
+        490.0,
+        340.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 23,
+      "from_step": 0,
+      "to_step": 7,
+      "condition": "Mode_verif_seq",
+      "pos": [
+        670.0,
+        180.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 24,
+      "from_step": 3,
+      "to_step": 7,
+      "condition": "Mode_verif_seq",
+      "pos": [
+        670.0,
+        340.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 25,
+      "from_step": 7,
+      "to_step": 3,
+      "condition": "Fin_verif",
+      "pos": [
+        670.0,
+        340.0
+      ],
+      "route_y": null,
+      "dst_route_x": -447.5,
+      "and_group": null
+    },
+    {
+      "id": 26,
+      "from_step": 7,
+      "to_step": 6,
+      "condition": "Passage_verif_libre",
+      "pos": [
+        670.0,
+        340.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 27,
+      "from_step": 0,
+      "to_step": 4,
+      "condition": "Mode_preparation",
+      "pos": [
+        310.0,
+        180.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 28,
+      "from_step": 4,
+      "to_step": 3,
+      "condition": "Préparation_ok",
+      "pos": [
+        310.0,
+        340.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 29,
+      "from_step": 3,
+      "to_step": 5,
+      "condition": "Mode_cloture",
+      "pos": [
+        -50.0,
+        340.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 30,
+      "from_step": 5,
+      "to_step": 0,
+      "condition": "Clôture_ok",
+      "pos": [
+        -50.0,
+        500.0
+      ],
+      "route_y": null,
+      "dst_route_x": -359.5,
+      "and_group": null
+    },
+    {
+      "id": 31,
+      "from_step": 3,
+      "to_step": 9,
+      "condition": "Defaut_mineur",
+      "pos": [
+        310.0,
+        340.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 32,
+      "from_step": 9,
+      "to_step": 3,
+      "condition": "Defaut_resolu",
+      "pos": [
+        310.0,
+        500.0
+      ],
+      "route_y": null,
+      "dst_route_x": -403.5,
+      "and_group": null
+    },
+    {
+      "id": 33,
+      "from_step": 9,
+      "to_step": 12,
+      "condition": "Stop",
+      "pos": [
+        850.0,
+        500.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 34,
+      "from_step": 9,
+      "to_step": 13,
+      "condition": "Stop_immediat",
+      "pos": [
+        1030.0,
+        500.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 35,
+      "from_step": 9,
+      "to_step": 11,
+      "condition": "Defaut_majeur",
+      "pos": [
+        670.0,
+        500.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 36,
+      "from_step": 11,
+      "to_step": 1,
+      "condition": "OK_SUITE",
+      "pos": [
+        -230.0,
+        500.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    }
+  ],
+  "next_step_id": 16,
+  "next_trans_id": 37,
+  "next_and_group_id": 0
 }

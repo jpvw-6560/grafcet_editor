@@ -385,7 +385,7 @@ impl GrafcetsPage {
                     .show(ui, |ui| {
                         ui.horizontal(|ui| {
                             ui.label(
-                                egui::RichText::new("Grafcet généré depuis le GEMMA — lecture seule")
+                                egui::RichText::new("Grafcet généré depuis le GEMMA")
                                     .size(11.0)
                                     .color(egui::Color32::from_rgb(120, 170, 220)),
                             );
@@ -594,28 +594,24 @@ fn grafcet_summary(g: &Grafcet) -> String {
 // ── Layout automatique (BFS) ──────────────────────────────────────────────────
 
 /// Positionne automatiquement les étapes et les barres de transition d'un grafcet
-/// à partir d'un parcours BFS depuis l'étape initiale.
+/// à partir d'un parcours topologique (DFS back-edges + BFS sur DAG) depuis l'étape initiale.
 ///
-/// Formules (STEP_H=80, STEP_WICK=30, TRANS_WICK=25) :
-///   sy_anchor = step_y + STEP_H/2 + STEP_WICK  = step_y + 70
-///   bar_y     = step_y + 70 + TRANS_WICK        = step_y + 95  (connexion haute seamless)
-///   dy_anchor = next_y - 70
-///   t_bot_y   = bar_y + TRANS_WICK              = step_y + 120
-///   → pour goes_up = false : next_y - 70 >= step_y + 120 → Y_STEP >= 190
-///   → avec Y_STEP = 190 : next_y - 70 = step_y + 120, connexion basse seamless
+/// Règles de routage back-edge :
+///   - chaque boucle de retour reçoit une route_x unique (échelonnée vers la gauche)
+///   - pas de flèche sur la ligne latérale (notation GRAFCET standard)
 pub fn auto_layout(grafcet: &mut Grafcet) {
-    use std::collections::{HashMap, VecDeque};
+    use std::collections::{HashMap, HashSet, VecDeque};
     use crate::gui::canvas::{STEP_H, STEP_W, STEP_WICK, TRANS_WICK};
 
     if grafcet.steps.is_empty() { return; }
 
     const X_CENTER: f32 = 400.0;
-    const X_GAP: f32    = 180.0;  // écart horizontal entre colonnes parallèles
-    const Y_START: f32  = 100.0;  // y de l'étape initiale
-    // Y_STEP  = STEP_H/2 + STEP_WICK + TRANS_WICK*2 + STEP_WICK + STEP_H/2  (centre → centre)
-    let y_step          = STEP_H / 2.0 + STEP_WICK + TRANS_WICK + TRANS_WICK + STEP_WICK + STEP_H / 2.0;
-    // bar_y_offset = STEP_H/2 + STEP_WICK + TRANS_WICK  (centre étape → barre de transition)
-    let bar_y_offset    = STEP_H / 2.0 + STEP_WICK + TRANS_WICK;
+    const X_GAP: f32    = 180.0;
+    const Y_START: f32  = 100.0;
+    const LOOP_X_BASE_OFFSET: f32 = 80.0;  // recul depuis le step le plus à gauche
+    const LOOP_X_STEP: f32        = 22.0;  // écartement entre routes de retour successives
+    let y_step       = STEP_H / 2.0 + STEP_WICK + TRANS_WICK + TRANS_WICK + STEP_WICK + STEP_H / 2.0;
+    let bar_y_offset = STEP_H / 2.0 + STEP_WICK + TRANS_WICK;
 
     // ── 1. Étape initiale ──────────────────────────────────────────────────
     let start_id = grafcet.steps.iter()
@@ -624,11 +620,72 @@ pub fn auto_layout(grafcet: &mut Grafcet) {
         .map(|s| s.id)
         .unwrap();
 
-    // ── 2. BFS → niveau de chaque étape ───────────────────────────────────
-    let adj: HashMap<u32, Vec<u32>> = {
+    // ── 2. DFS pour détecter les back-edges (arêtes de retour → cycles) ───
+    let adj: HashMap<u32, Vec<(u32, u32)>> = {   // from → [(to, tid)]
+        let mut m: HashMap<u32, Vec<(u32, u32)>> = HashMap::new();
+        for t in &grafcet.transitions {
+            m.entry(t.from_step).or_default().push((t.to_step, t.id));
+        }
+        m
+    };
+
+    let mut back_edge_tids: HashSet<u32> = HashSet::new();
+    {
+        let mut color: HashMap<u32, u8> = HashMap::new(); // 0=white,1=grey,2=black
+        let mut stk: Vec<(u32, usize)> = vec![(start_id, 0)];
+        // Initialise blancs
+        for s in &grafcet.steps { color.insert(s.id, 0); }
+
+        while let Some((node, child_idx)) = stk.last_mut() {
+            let node = *node;
+            if color[&node] == 0 {
+                *color.get_mut(&node).unwrap() = 1;
+            }
+            let children = adj.get(&node).map(|v| v.as_slice()).unwrap_or(&[]);
+            if *child_idx >= children.len() {
+                *color.get_mut(&node).unwrap() = 2;
+                stk.pop();
+            } else {
+                let (to, tid) = children[*child_idx];
+                *child_idx += 1;
+                let c = *color.get(&to).unwrap_or(&2);
+                if c == 1 {
+                    back_edge_tids.insert(tid); // back-edge détectée
+                } else if c == 0 {
+                    stk.push((to, 0));
+                }
+            }
+        }
+        // Étapes non rejointes depuis start
+        for s in &grafcet.steps {
+            if *color.get(&s.id).unwrap_or(&0) == 0 {
+                let mut stk2: Vec<(u32, usize)> = vec![(s.id, 0)];
+                while let Some((node, child_idx)) = stk2.last_mut() {
+                    let node = *node;
+                    if color[&node] == 0 { *color.get_mut(&node).unwrap() = 1; }
+                    let children = adj.get(&node).map(|v| v.as_slice()).unwrap_or(&[]);
+                    if *child_idx >= children.len() {
+                        *color.get_mut(&node).unwrap() = 2;
+                        stk2.pop();
+                    } else {
+                        let (to, tid) = children[*child_idx];
+                        *child_idx += 1;
+                        let c = *color.get(&to).unwrap_or(&2);
+                        if c == 1 { back_edge_tids.insert(tid); }
+                        else if c == 0 { stk2.push((to, 0)); }
+                    }
+                }
+            }
+        }
+    }
+
+    // ── 3. BFS sur DAG (sans back-edges) → niveau de chaque étape ─────────
+    let fwd_adj: HashMap<u32, Vec<u32>> = {
         let mut m: HashMap<u32, Vec<u32>> = HashMap::new();
         for t in &grafcet.transitions {
-            m.entry(t.from_step).or_default().push(t.to_step);
+            if !back_edge_tids.contains(&t.id) {
+                m.entry(t.from_step).or_default().push(t.to_step);
+            }
         }
         m
     };
@@ -639,7 +696,7 @@ pub fn auto_layout(grafcet: &mut Grafcet) {
     while let Some((sid, lv)) = queue.pop_front() {
         if levels.contains_key(&sid) { continue; }
         levels.insert(sid, lv);
-        if let Some(nexts) = adj.get(&sid) {
+        if let Some(nexts) = fwd_adj.get(&sid) {
             for &nxt in nexts {
                 if !levels.contains_key(&nxt) {
                     queue.push_back((nxt, lv + 1));
@@ -647,7 +704,6 @@ pub fn auto_layout(grafcet: &mut Grafcet) {
             }
         }
     }
-    // Étapes non atteignables → niveaux supplémentaires
     let max_lv = levels.values().max().copied().unwrap_or(0);
     let mut extra = 1;
     for step in &grafcet.steps {
@@ -657,22 +713,18 @@ pub fn auto_layout(grafcet: &mut Grafcet) {
         }
     }
 
-    // ── 3. Grouper par niveau ──────────────────────────────────────────────
+    // ── 4. Grouper par niveau et assigner positions ─────────────────────
     let mut by_level: HashMap<usize, Vec<u32>> = HashMap::new();
-    for (&id, &lv) in &levels {
-        by_level.entry(lv).or_default().push(id);
-    }
+    for (&id, &lv) in &levels { by_level.entry(lv).or_default().push(id); }
     for ids in by_level.values_mut() { ids.sort(); }
 
     let mut sorted_lvs: Vec<usize> = by_level.keys().cloned().collect();
     sorted_lvs.sort();
 
-    // niveau → y
     let level_y: HashMap<usize, f32> = sorted_lvs.iter().enumerate()
         .map(|(i, &lv)| (lv, Y_START + i as f32 * y_step))
         .collect();
 
-    // ── 4. Assigner positions aux étapes ──────────────────────────────────
     for (&lv, ids) in &by_level {
         let y = level_y[&lv];
         let n = ids.len();
@@ -683,37 +735,55 @@ pub fn auto_layout(grafcet: &mut Grafcet) {
                 let total_w = (n as f32 - 1.0) * X_GAP;
                 X_CENTER - total_w / 2.0 + j as f32 * X_GAP
             };
-            if let Some(step) = grafcet.step_mut(sid) {
-                step.pos = [x, y];
-            }
+            if let Some(step) = grafcet.step_mut(sid) { step.pos = [x, y]; }
         }
     }
 
     // ── 5. Positionner les barres de transition ────────────────────────────
-    // Calculer le X minimum (pour le décrochage des boucles de retour)
-    let min_step_x = grafcet.steps.iter()
-        .map(|s| s.pos[0])
-        .fold(f32::INFINITY, f32::min);
-    let loop_route_x = min_step_x - STEP_W / 2.0 - 65.0;
+    let min_step_x = grafcet.steps.iter().map(|s| s.pos[0]).fold(f32::INFINITY, f32::min);
+    let loop_route_base = min_step_x - STEP_W / 2.0 - LOOP_X_BASE_OFFSET;
 
-    let step_pos: HashMap<u32, [f32; 2]> = grafcet.steps.iter()
-        .map(|s| (s.id, s.pos))
+    let step_pos: HashMap<u32, [f32; 2]> = grafcet.steps.iter().map(|s| (s.id, s.pos)).collect();
+
+    // Trier les back-edges par destination y décroissante pour échelonnement lisible
+    let mut back_sorted: Vec<u32> = back_edge_tids.iter().cloned().collect();
+    back_sorted.sort_by(|&a, &b| {
+        let ya = grafcet.transition(a).and_then(|t| step_pos.get(&t.to_step)).map_or(0.0, |p| p[1]);
+        let yb = grafcet.transition(b).and_then(|t| step_pos.get(&t.to_step)).map_or(0.0, |p| p[1]);
+        ya.partial_cmp(&yb).unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let back_route_x: HashMap<u32, f32> = back_sorted.iter().enumerate()
+        .map(|(i, &tid)| (tid, loop_route_base - i as f32 * LOOP_X_STEP))
+        .collect();
+
+    // Détection des divergences OU (≥2 transitions non-back-edge depuis la même étape source)
+    // → ces transitions seront placées à l'X de leur étape DESTINATION (colinéarité verticale)
+    let mut fwd_from_groups: HashMap<u32, Vec<u32>> = HashMap::new();
+    for t in &grafcet.transitions {
+        if !back_edge_tids.contains(&t.id) {
+            fwd_from_groups.entry(t.from_step).or_default().push(t.id);
+        }
+    }
+    let is_div_trans: HashSet<u32> = fwd_from_groups.values()
+        .filter(|v| v.len() >= 2)
+        .flat_map(|v| v.iter().cloned())
         .collect();
 
     for t in &mut grafcet.transitions {
         let [fx, fy] = step_pos.get(&t.from_step).copied().unwrap_or([X_CENTER, Y_START]);
-        let [_tx, ty] = step_pos.get(&t.to_step).copied().unwrap_or([X_CENTER, Y_START]);
-
-        // Barre centrée entre ancre-basse source et ancre-haute destination
+        let [dx, _dy] = step_pos.get(&t.to_step).copied().unwrap_or([X_CENTER, Y_START]);
         let bar_y = fy + bar_y_offset;
-        let bar_x = fx;
-
-        let is_loop = ty <= fy; // la destination est au-dessus (boucle de fermeture)
-        t.pos = [bar_x, bar_y];
+        // Divergence : placer à l'X destination (colinéaire avec l'étape conditionnée)
+        // Back-edge ou transition simple : placer à l'X source
+        let bar_x = if !back_edge_tids.contains(&t.id) && is_div_trans.contains(&t.id) {
+            dx
+        } else {
+            fx
+        };
+        t.pos     = [bar_x, bar_y];
         t.route_y = None;
-        if is_loop {
-            // Route latérale gauche calculée depuis le X le plus à gauche
-            t.dst_route_x = Some(loop_route_x);
+        if back_edge_tids.contains(&t.id) {
+            t.dst_route_x = Some(*back_route_x.get(&t.id).unwrap_or(&loop_route_base));
         } else {
             t.dst_route_x = None;
         }

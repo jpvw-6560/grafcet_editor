@@ -15,6 +15,9 @@ pub struct Grafcet {
     pub next_step_id: u32,
     #[serde(default)]
     pub next_trans_id: u32,
+    /// Compteur pour créer des groupes ET uniques.
+    #[serde(default)]
+    pub next_and_group_id: u32,
 }
 
 impl Grafcet {
@@ -73,5 +76,12 @@ impl Grafcet {
 
     pub fn transition_mut(&mut self, id: u32) -> Option<&mut Transition> {
         self.transitions.iter_mut().find(|t| t.id == id)
+    }
+
+    /// Crée un nouvel identifiant de groupe ET (unique dans ce grafcet).
+    pub fn new_and_group(&mut self) -> u32 {
+        let id = self.next_and_group_id;
+        self.next_and_group_id += 1;
+        id
     }
 }

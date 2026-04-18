@@ -1,0 +1,20 @@
+{
+  "nom": "GS",
+  "type": "grafcet",
+
+  "etapes": [
+    { "id": "S0", "nom": "Sécurité OK" },
+    { "id": "S1", "nom": "Arrêt d'urgence actif" }
+  ],
+
+  "initial": "S0",
+
+  "transitions": [
+    { "from": "S0", "to": "S1", "condition": "AU" },
+    { "from": "S1", "to": "S0", "condition": "EU_relachee" }
+  ],
+
+  "sorties": {
+    "autorisation": "S0"
+  }
+}

@@ -378,8 +378,8 @@ impl App {
 
     /// Regénère TOUS les grafcets issus du GEMMA.
     /// Structure cible :
-    ///   GS (complet), GC (stub), puis un grafcet par état Command (F1..F6, stubs).
-    /// Les grafcets utilisateur (generated=false) sont conservés à la fin.
+    ///   GS : 2 étapes génériques (Sécurité_OK / ARU_actif), AUCUN état GEMMA.
+    ///   GC : une étape par état GEMMA (A+D+F), toutes les transitions du GEMMA.
     fn generate_grafcets_from_gemma(&mut self) {
         let Some(project) = self.project.as_mut() else {
             self.status = "Aucun projet ouvert".to_string();
@@ -391,142 +391,138 @@ impl App {
             return;
         }
 
-        use crate::gemma::StateType;
         use crate::grafcet::StepKind;
         use crate::project::NamedGrafcet;
 
-        // ── 1. Supprimer TOUS les grafcets existants ─────────────────────────
+        // ── 1. Supprimer TOUS les grafcets générés ───────────────────────────
         project.grafcets.clear();
 
         // ── Extraction owned des données GEMMA ───────────────────────────────
-        struct StateInfo { id: String, stype: StateType, action: String }
-        struct TransInfo { from: String, from_type: StateType, to: String, to_type: StateType, cond: String }
+        struct StateInfo { id: String }
+        struct TransInfo  { from: String, to: String, cond: String }
 
         let state_infos: Vec<StateInfo> = project.gemma.states.iter()
-            .map(|s| StateInfo { id: s.id.clone(), stype: s.state_type, action: s.action.clone() })
+            .map(|s| StateInfo { id: s.id.clone() })
             .collect();
 
         let trans_infos: Vec<TransInfo> = project.gemma.transitions.iter()
-            .map(|t| {
-                let from_type = state_infos.iter().find(|s| s.id == t.from)
-                    .map_or(StateType::Command, |s| s.stype);
-                let to_type = state_infos.iter().find(|s| s.id == t.to)
-                    .map_or(StateType::Command, |s| s.stype);
-                TransInfo {
-                    from: t.from.clone(), from_type,
-                    to:   t.to.clone(),   to_type,
-                    cond: t.condition.to_display(),
-                }
+            .map(|t| TransInfo {
+                from: t.from.clone(),
+                to:   t.to.clone(),
+                cond: t.condition.to_display(),
             })
             .collect();
 
-        fn stub(name: &str) -> NamedGrafcet {
-            let mut ng = NamedGrafcet::new(name);
-            ng.generated = true;
-            if let Some(s) = ng.grafcet.steps.first_mut() {
-                s.actions.push("— pas encore implémenté —".to_string());
-            }
-            ng
-        }
-
-        // ── 2. GS : Grafcet de Sécurité — génération complète ───────────────
+        // ── 2. GS : Grafcet de Sécurité — 2 étapes, AUCUN état GEMMA ────────
+        // E0 : Sécurité OK (initial)  — action : autorisation := 1
+        // E1 : ARU actif              — action : autorisation := 0
+        // Condition E0→E1 : la condition de la transition qui entre dans D1
+        //                   (typiquement "AU", ex. F6→D1)
+        // Condition E1→E0 : la condition D1→D2 du GEMMA (typiquement "EU_relachee")
         {
-            let mut sorted: Vec<&StateInfo> = state_infos.iter()
-                .filter(|s| s.stype == StateType::Safety).collect();
+            // Condition d'activation ARU : chercher condition entrant dans D1
+            let cond_aru = trans_infos.iter()
+                .find(|t| t.to == "D1")
+                .map(|t| if t.cond.is_empty() || t.cond == "TRUE" { "AU".to_string() } else { t.cond.clone() })
+                .unwrap_or_else(|| "AU".to_string());
 
-            if !sorted.is_empty() {
-                sorted.sort_by(|a, b| {
-                    // A-états en premier, puis D-états ; alphabétique dans chaque groupe
-                    let ga = u8::from(!a.id.starts_with('A'));
-                    let gb = u8::from(!b.id.starts_with('A'));
-                    ga.cmp(&gb).then(a.id.cmp(&b.id))
-                });
+            // Condition de retour : D1→D2
+            let cond_relachee = trans_infos.iter()
+                .find(|t| t.from == "D1" && t.to == "D2")
+                .map(|t| if t.cond.is_empty() || t.cond == "TRUE" { "EU_relachee".to_string() } else { t.cond.clone() })
+                .unwrap_or_else(|| "EU_relachee".to_string());
 
-                let mut ng = NamedGrafcet::new("GS");
-                ng.generated = true;
-                ng.grafcet = crate::grafcet::Grafcet::new();
+            let mut ng = NamedGrafcet::new("GS");
+            ng.generated = true;
+            ng.grafcet = crate::grafcet::Grafcet::new();
 
-                let mut id_map = std::collections::HashMap::<String, u32>::new();
-                for (i, state) in sorted.iter().enumerate() {
-                    let sid = ng.grafcet.add_step([200.0, 80.0 + i as f32 * 150.0]);
-                    if let Some(s) = ng.grafcet.step_mut(sid) {
-                        s.label = state.id.clone();
-                        // Action du GEMMA → actions de l'étape
-                        if !state.action.is_empty() {
-                            s.actions.push(state.action.clone());
-                        }
-                        if i == 0 { s.kind = StepKind::Initial; }
-                    }
-                    id_map.insert(state.id.clone(), sid);
-                }
-
-                // Transitions GEMMA impliquant un état Safety en destination
-                for t in &trans_infos {
-                    if t.to_type != StateType::Safety { continue; }
-                    let to_sid = match id_map.get(&t.to) { Some(&v) => v, None => continue };
-                    let nc = |c: &str| if c == "TRUE" || c.is_empty() { "1".to_string() } else { c.to_string() };
-
-                    if t.from_type == StateType::Safety {
-                        // Safety → Safety : transition directe
-                        if let Some(&from_sid) = id_map.get(&t.from) {
-                            let tid = ng.grafcet.add_transition(from_sid, to_sid);
-                            if let Some(tr) = ng.grafcet.transition_mut(tid) { tr.condition = nc(&t.cond); }
-                        }
-                    } else {
-                        // Cross-catégorie (ex : F1→D1 via ARU) : accrochée au 1er A-état
-                        // avec la condition "X_{source} AND {cond}" pour garder la sémantique GEMMA
-                        let anchor = sorted.iter().find(|s| s.id.starts_with('A'))
-                            .and_then(|s| id_map.get(&s.id)).copied();
-                        if let Some(from_sid) = anchor {
-                            let cond = if t.cond == "TRUE" || t.cond.is_empty() {
-                                format!("X_{}", t.from)
-                            } else {
-                                format!("X_{} AND {}", t.from, t.cond)
-                            };
-                            if !ng.grafcet.transitions.iter()
-                                .any(|tr| tr.from_step == from_sid && tr.to_step == to_sid)
-                            {
-                                let tid = ng.grafcet.add_transition(from_sid, to_sid);
-                                if let Some(tr) = ng.grafcet.transition_mut(tid) { tr.condition = cond; }
-                            }
-                        }
-                    }
-                }
-
-                // ARU automatique : de chaque A-état vers le 1er D-état
-                let first_d = sorted.iter().find(|s| s.id.starts_with('D'))
-                    .and_then(|s| id_map.get(&s.id)).copied();
-                if let Some(d_sid) = first_d {
-                    for state in &sorted {
-                        if !state.id.starts_with('A') { continue; }
-                        if let Some(&a_sid) = id_map.get(&state.id) {
-                            if !ng.grafcet.transitions.iter()
-                                .any(|t| t.from_step == a_sid && t.to_step == d_sid)
-                            {
-                                let tid = ng.grafcet.add_transition(a_sid, d_sid);
-                                if let Some(tr) = ng.grafcet.transition_mut(tid) {
-                                    tr.condition = "ARU".to_string();
-                                }
-                            }
-                        }
-                    }
-                }
-
-                project.grafcets.push(ng);
+            let s0 = ng.grafcet.add_step([200.0, 80.0]);
+            if let Some(s) = ng.grafcet.step_mut(s0) {
+                s.label = "Repos".to_string();
+                s.kind  = StepKind::Initial;
+                // Forçage : inhibe tous les autres grafcets (GC gelé à son étape initiale)
+                s.actions.push("F/GC:(0)".to_string());
             }
+
+            let s1 = ng.grafcet.add_step([200.0, 230.0]);
+            if let Some(s) = ng.grafcet.step_mut(s1) {
+                s.label = "En_service".to_string();
+            }
+
+            let t0 = ng.grafcet.add_transition(s0, s1);
+            // X0→X1 : ARU relâché ET validation opérateur
+            if let Some(tr) = ng.grafcet.transition_mut(t0) {
+                tr.condition = format!("/{}  .  Valider", cond_aru);
+            }
+
+            let t1 = ng.grafcet.add_transition(s1, s0);
+            // X1→X0 : déclenchement immédiat de l'ARU
+            if let Some(tr) = ng.grafcet.transition_mut(t1) {
+                tr.condition = cond_aru.clone();
+            }
+
+            project.grafcets.push(ng);
         }
 
-        // ── 3. GC : Grafcet de Commandes — stub ────────────────────────────
-        if state_infos.iter().any(|s| s.stype == StateType::Command) {
-            project.grafcets.push(stub("GC"));
-        }
+        // ── 3. GC : Grafcet de Commande — tous les états GEMMA ───────────────
+        // Ordre d'affichage : A1 A6 A7 F1 F2 F3 F4 F5 F6 D3 D1 D2 A2 A3 A4 A5
+        {
+            const GC_ORDER: &[&str] = &[
+                "A1","A6","A7","F1","F2","F3","F4","F5","F6",
+                "D3","D1","D2","A2","A3","A4","A5",
+            ];
 
-        // ── 4. Réintégrer les grafcets utilisateur à la fin ——— SUPPRIMÉ ────
-        // Les grafcets F1-F6 (GPN, G_PREP, etc.) sont créés manuellement
-        // par l'utilisateur via "+ Nouveau".
+            let mut ng = NamedGrafcet::new("GC");
+            ng.generated = true;
+            ng.grafcet = crate::grafcet::Grafcet::new();
+
+            let mut id_map = std::collections::HashMap::<String, u32>::new();
+
+            // Étapes dans l'ordre GC_ORDER, puis les états non listés (ordre original)
+            let ordered: Vec<&StateInfo> = GC_ORDER.iter()
+                .filter_map(|code| state_infos.iter().find(|s| s.id == *code))
+                .collect();
+            let extras: Vec<&StateInfo> = state_infos.iter()
+                .filter(|s| !GC_ORDER.contains(&s.id.as_str()))
+                .collect();
+
+            for (i, state) in ordered.iter().chain(extras.iter()).enumerate() {
+                let x = 200.0;
+                let y = 80.0 + i as f32 * 150.0;
+                let sid = ng.grafcet.add_step([x, y]);
+                if let Some(s) = ng.grafcet.step_mut(sid) {
+                    // Label affiché entre guillemets à droite de l'étape
+                    s.label = format!("\"{}\"", state.id);
+                    // Action : variable de démarrage du grafcet associé
+                    // F1 → Start_G_PN ; tous les autres → Start_G_<id>
+                    let procedure = if state.id == "F1" {
+                        "Start_G_PN".to_string()
+                    } else {
+                        format!("Start_G_{}", state.id)
+                    };
+                    s.actions.push(procedure);
+                    if state.id == "A1" { s.kind = StepKind::Initial; }
+                }
+                id_map.insert(state.id.clone(), sid);
+            }
+
+            // Toutes les transitions du GEMMA dont les deux extrémités sont dans le GC
+            for t in &trans_infos {
+                let (Some(&from_sid), Some(&to_sid)) = (id_map.get(&t.from), id_map.get(&t.to)) else {
+                    continue;
+                };
+                let cond = if t.cond.is_empty() || t.cond == "TRUE" { "1".to_string() } else { t.cond.clone() };
+                let tid = ng.grafcet.add_transition(from_sid, to_sid);
+                if let Some(tr) = ng.grafcet.transition_mut(tid) {
+                    tr.condition = cond;
+                }
+            }
+
+            project.grafcets.push(ng);
+        }
 
         self.grafcets_page.reset();
-        self.status = "Grafcets regénérés : GS (complet) + GC ✓".to_string();
+        self.status = "Grafcets générés : GS (2 étapes) + GC (GEMMA complet) ✓".to_string();
         self.section = Section::Grafcets;
     }
 }

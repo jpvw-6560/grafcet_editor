@@ -66,18 +66,19 @@ impl Default for CanvasEditor {
 }
 
 impl CanvasEditor {
-    /// Calcule offset + zoom pour centrer tout le contenu dans `canvas_size`.
-    pub fn fit_to_content(&mut self, grafcet: &Grafcet, canvas_size: egui::Vec2) {
+    /// Calcule offset + zoom pour centrer tout le contenu dans `canvas_rect`.
+    /// `offset` est en coordonnées écran absolues pour cohérence avec le Painter.
+    pub fn fit_to_content(&mut self, grafcet: &Grafcet, canvas_rect: egui::Rect) {
+        let canvas_size = canvas_rect.size();
         if grafcet.steps.is_empty() || canvas_size.x <= 0.0 || canvas_size.y <= 0.0 { return; }
         let min_x = grafcet.steps.iter().map(|s| s.pos[0]).fold(f32::INFINITY,    f32::min);
         let max_x = grafcet.steps.iter().map(|s| s.pos[0]).fold(f32::NEG_INFINITY, f32::max);
         let min_y = grafcet.steps.iter().map(|s| s.pos[1]).fold(f32::INFINITY,    f32::min);
         let max_y = grafcet.steps.iter().map(|s| s.pos[1]).fold(f32::NEG_INFINITY, f32::max);
-        // Bornes de contenu en coordonnées canvas (marges : routing + labels + dernière transition)
-        let left  = min_x - STEP_W / 2.0 - 90.0; // réserve pour la route de loopback
-        let right = max_x + STEP_W / 2.0 + 120.0; // réserve pour labels de conditions
+        let left  = min_x - STEP_W / 2.0 - 90.0;
+        let right = max_x + STEP_W / 2.0 + 120.0;
         let top   = min_y - STEP_H / 2.0 - 20.0;
-        let bot   = max_y + STEP_H / 2.0 + 80.0;  // dernière transition + mèches
+        let bot   = max_y + STEP_H / 2.0 + 80.0;
         let cw = right - left;
         let ch = bot   - top;
         if cw <= 0.0 || ch <= 0.0 { return; }
@@ -86,9 +87,10 @@ impl CanvasEditor {
             .min((canvas_size.y - 2.0 * pad) / ch)
             .clamp(0.15, 1.5);
         self.zoom   = zoom;
+        // offset absolu : inclut canvas_rect.min pour que pos*zoom+offset = coordonnée écran
         self.offset = egui::Vec2::new(
-            canvas_size.x / 2.0 - (left + cw / 2.0) * zoom,
-            canvas_size.y / 2.0 - (top  + ch / 2.0) * zoom,
+            canvas_rect.min.x + canvas_size.x / 2.0 - (left + cw / 2.0) * zoom,
+            canvas_rect.min.y + canvas_size.y / 2.0 - (top  + ch / 2.0) * zoom,
         );
     }
 }
@@ -202,6 +204,7 @@ impl CanvasEditor {
                     let trans_data = grafcet.transition(tid).map(|t| {
                         (t.from_step, t.to_step, t.condition.clone(), t.pos, t.route_y, t.dst_route_x)
                     });
+
                     if let Some((from_step, to_step, cond, pos, route_y, dst_route_x)) = trans_data {
                         ui.label(egui::RichText::new(format!("Transition Y{tid}")).strong());
                         ui.separator();
@@ -216,6 +219,56 @@ impl CanvasEditor {
                             }
                         }
 
+                        // ── Groupe ET ─────────────────────────────────────
+                        ui.separator();
+                        ui.label(egui::RichText::new("Groupe ET (═══)").color(
+                            egui::Color32::from_rgb(100, 200, 255)));
+                        let and_group = grafcet.transition(tid).and_then(|t| t.and_group);
+                        ui.horizontal(|ui| {
+                            if let Some(gid) = and_group {
+                                ui.label(format!("Groupe #{gid}"));
+                                if ui.small_button("✕ Retirer").clicked() {
+                                    if let Some(t) = grafcet.transition_mut(tid) {
+                                        t.and_group = None;
+                                    }
+                                }
+                            } else {
+                                ui.label("Aucun");
+                                if ui.small_button("+ Nouveau groupe ET").clicked() {
+                                    let gid = grafcet.new_and_group();
+                                    if let Some(t) = grafcet.transition_mut(tid) {
+                                        t.and_group = Some(gid);
+                                    }
+                                    status_out = Some(format!("Groupe ET #{gid} créé — assignez le même groupe aux autres transitions"));
+                                }
+                            }
+                        });
+                        // Champ pour rejoindre un groupe existant
+                        {
+                            let existing: Vec<u32> = {
+                                let mut ids: Vec<u32> = grafcet.transitions.iter()
+                                    .filter_map(|t| t.and_group)
+                                    .collect::<std::collections::HashSet<_>>()
+                                    .into_iter().collect();
+                                ids.sort();
+                                ids
+                            };
+                            if !existing.is_empty() {
+                                ui.horizontal(|ui| {
+                                    ui.label("Rejoindre :");
+                                    for gid in existing {
+                                        if Some(gid) != and_group {
+                                            if ui.small_button(format!("#{gid}")).clicked() {
+                                                if let Some(t) = grafcet.transition_mut(tid) {
+                                                    t.and_group = Some(gid);
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                        }
+
                         ui.separator();
 
                         // Étape source
@@ -224,10 +277,10 @@ impl CanvasEditor {
                             let step_ids: Vec<u32> = grafcet.steps.iter().map(|s| s.id).collect();
                             let mut sel_from = from_step;
                             egui::ComboBox::new(format!("trans_from_{tid}"), "")
-                                .selected_text(format!("E{sel_from}"))
+                                .selected_text(format!("X{sel_from}"))
                                 .show_ui(ui, |ui| {
                                     for sid in &step_ids {
-                                        ui.selectable_value(&mut sel_from, *sid, format!("E{sid}"));
+                                        ui.selectable_value(&mut sel_from, *sid, format!("X{sid}"));
                                     }
                                 });
                             if sel_from != from_step {
@@ -243,10 +296,10 @@ impl CanvasEditor {
                             let step_ids: Vec<u32> = grafcet.steps.iter().map(|s| s.id).collect();
                             let mut sel_to = to_step;
                             egui::ComboBox::new(format!("trans_to_{tid}"), "")
-                                .selected_text(format!("E{sel_to}"))
+                                .selected_text(format!("X{sel_to}"))
                                 .show_ui(ui, |ui| {
                                     for sid in &step_ids {
-                                        ui.selectable_value(&mut sel_to, *sid, format!("E{sid}"));
+                                        ui.selectable_value(&mut sel_to, *sid, format!("X{sid}"));
                                     }
                                 });
                             if sel_to != to_step {
@@ -347,7 +400,7 @@ impl CanvasEditor {
                         .collect();
                     for (tid, from, to, cond) in trans {
                         ui.horizontal(|ui| {
-                            if ui.selectable_label(false, format!("T{tid} (E{from}→E{to})")).clicked() {
+                            if ui.selectable_label(false, format!("Y{tid} (X{from}→X{to})")).clicked() {
                                 self.selected_trans = Some(tid);
                                 self.selected_step = None;
                             }
@@ -370,10 +423,10 @@ impl CanvasEditor {
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(egui::Color32::from_rgb(30, 32, 36)))
             .show_inside(ui, |ui| {
-                // Auto-fit demandé (après layout automatique ou bouton Centrer)
+                // Auto-fit demandé (après layout automatique rect_before_wrapouton Centrer)
                 if self.pending_fit {
                     self.pending_fit = false;
-                    self.fit_to_content(grafcet, ui.available_size());
+                    self.fit_to_content(grafcet, ui.available_rect_before_wrap());
                 }
                 let resp = ui.allocate_rect(
                     ui.available_rect_before_wrap(),
@@ -432,9 +485,9 @@ impl CanvasEditor {
                             // coordonnées draw (Painter absolu)
                             let hx_draw = hx_cv * self.zoom + self.offset.x;
                             let hy_draw = hy_cv * self.zoom + self.offset.y;
-                            // coordonnées ui.interact (locales = draw + origin)
+                            // offset est absolu : ui.interact() et Painter partagent la même base
                             let hy_rect = egui::Rect::from_center_size(
-                                Pos2::new(hx_draw + origin.x, hy_draw + origin.y),
+                                Pos2::new(hx_draw, hy_draw),
                                 egui::Vec2::splat(HS),
                             );
                             let hy_resp = ui.interact(
@@ -476,10 +529,10 @@ impl CanvasEditor {
                                 let auto_rx  = t_pos[0].min(dst_pos[0]) - (STEP_W / 2.0 + 25.0);
                                 let rx_cv    = dst_route_x.unwrap_or(auto_rx);
                                 let mid_y_cv = (t_bot_cv + dy_anc) / 2.0;
-                                let rx_draw  = rx_cv    * self.zoom + self.offset.x;
+                                let rx_draw  = rx_cv * self.zoom + self.offset.x;
                                 let my_draw  = mid_y_cv * self.zoom + self.offset.y;
                                 let rx_rect  = egui::Rect::from_center_size(
-                                    Pos2::new(rx_draw + origin.x, my_draw + origin.y),
+                                    Pos2::new(rx_draw, my_draw),
                                     egui::Vec2::splat(HS),
                                 );
                                 let rx_resp = ui.interact(
@@ -520,8 +573,8 @@ impl CanvasEditor {
                 if self.tool == Tool::AddStep {
                     if let Some(mouse) = ctx.pointer_interact_pos() {
                         if resp.rect.contains(mouse) {
-                            let cv_x = (mouse.x - resp.rect.min.x - self.offset.x) / self.zoom;
-                            let cv_y = (mouse.y - resp.rect.min.y - self.offset.y) / self.zoom;
+                            let cv_x = (mouse.x - self.offset.x) / self.zoom;
+                            let cv_y = (mouse.y - self.offset.y) / self.zoom;
                             draw_step_ghost(&painter, [cv_x, cv_y], self.offset, self.zoom);
                         }
                     }
@@ -531,8 +584,8 @@ impl CanvasEditor {
                 if let Some(from_id) = self.conn_from {
                     if let Some(src) = grafcet.step(from_id) {
                         if let Some(mouse) = ctx.pointer_interact_pos() {
-                            let sx = src.pos[0] * self.zoom + self.offset.x + resp.rect.min.x;
-                            let sy = src.pos[1] * self.zoom + self.offset.y + resp.rect.min.y
+                            let sx = src.pos[0] * self.zoom + self.offset.x;
+                            let sy = src.pos[1] * self.zoom + self.offset.y
                                 + STEP_H * self.zoom / 2.0;
                             painter.line_segment(
                                 [Pos2::new(sx, sy), mouse],
@@ -552,12 +605,12 @@ impl CanvasEditor {
                 if resp.dragged_by(egui::PointerButton::Middle) {
                     self.offset += resp.drag_delta();
                 }
-
                 if just_pressed && resp.contains_pointer() {
                     if let Some(p) = pointer {
+                        // offset est absolu → pas de soustraction de origin
                         let cv = Pos2::new(
-                            (p.x - origin.x - self.offset.x) / self.zoom,
-                            (p.y - origin.y - self.offset.y) / self.zoom,
+                            (p.x - self.offset.x) / self.zoom,
+                            (p.y - self.offset.y) / self.zoom,
                         );
 
                 // ── Hit-test handles de routage (priorité max en mode Select) ─
@@ -624,11 +677,11 @@ impl CanvasEditor {
                                 }
                             }
                         }
-                    }
-                }
+                    }  // if let Some(p)
+                }  // if just_pressed
 
                 if primary_down {
-                    // Drag de la barre de transition (route_y/x gérés par ui.interact() ci-dessus)
+                    // Drag de la barre de transition ou d'une étape
                     if let Some(tid) = self.dragging_trans {
                         if let Some(t) = grafcet.transition_mut(tid) {
                             t.pos[0] += ptr_delta.x / self.zoom;
@@ -637,8 +690,8 @@ impl CanvasEditor {
                     } else if let Some(id) = self.dragging_step {
                         if let Some(p) = pointer {
                             let cv = Pos2::new(
-                                (p.x - origin.x - self.offset.x) / self.zoom,
-                                (p.y - origin.y - self.offset.y) / self.zoom,
+                                (p.x - self.offset.x) / self.zoom,
+                                (p.y - self.offset.y) / self.zoom,
                             );
                             if let Some(s) = grafcet.step_mut(id) {
                                 s.pos = [cv.x - self.drag_offset.x, cv.y - self.drag_offset.y];

@@ -2,17 +2,58 @@
   "steps": [
     {
       "id": 0,
-      "label": "E0",
-      "actions": [],
+      "label": "Repos",
+      "actions": [
+        "F/GC:(0)"
+      ],
       "kind": "Initial",
       "pos": [
-        400.0,
-        100.0
+        200.0,
+        80.0
+      ],
+      "active": false
+    },
+    {
+      "id": 1,
+      "label": "En_service",
+      "actions": [],
+      "kind": "Normal",
+      "pos": [
+        200.0,
+        230.0
       ],
       "active": false
     }
   ],
-  "transitions": [],
-  "next_step_id": 1,
-  "next_trans_id": 0
+  "transitions": [
+    {
+      "id": 0,
+      "from_step": 0,
+      "to_step": 1,
+      "condition": "/Defaut  .  Valider",
+      "pos": [
+        200.0,
+        175.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    },
+    {
+      "id": 1,
+      "from_step": 1,
+      "to_step": 0,
+      "condition": "Defaut",
+      "pos": [
+        200.0,
+        325.0
+      ],
+      "route_y": null,
+      "dst_route_x": null,
+      "and_group": null
+    }
+  ],
+  "next_step_id": 2,
+  "next_trans_id": 2,
+  "next_and_group_id": 0
 }

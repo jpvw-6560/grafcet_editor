@@ -18,6 +18,11 @@ pub struct Transition {
     /// None = automatique.
     #[serde(default)]
     pub dst_route_x: Option<f32>,
+    /// Groupe ET (simultanéité GRAFCET).
+    /// Transitions avec le même and_group et le même from_step → divergence ET.
+    /// Transitions avec le même and_group et le même to_step   → convergence ET.
+    #[serde(default)]
+    pub and_group: Option<u32>,
 }
 
 impl Transition {
@@ -30,6 +35,7 @@ impl Transition {
             pos,
             route_y: None,
             dst_route_x: None,
+            and_group: None,
         }
     }
 }
